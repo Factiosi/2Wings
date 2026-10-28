@@ -159,8 +159,10 @@ class HostsPage:
                 groups.append(row)
         self._apply_filter()
         hint = (
-            "Отмеченные сервисы получают в hosts адреса, которые выбранный DNS отдаёт из-за рубежа. "
-            "Если у сервиса нет адреса в этом DNS, берётся следующий. «Прямые записи» — готовые адреса."
+            "Отмеченные сервисы получают в hosts адреса прокси выбранного DNS. Zapret DNS, Comss и XBOX "
+            "Tigo спрашивает вживую при «Применить», остальные берёт из каталога; неотвечающие адреса "
+            "не записываются. Домены, которые DNS не проксирует, остаются обычному DNS. "
+            "«Прямые записи» — готовые адреса."
         )
         return block_section(
             "Сервисы",
@@ -272,6 +274,8 @@ class HostsPage:
 
     def _apply_services(self, _: ft.ControlEvent) -> None:
         selection = self._selection()
+        if selection and not self._busy:
+            show_toast(self.page, "Спрашиваю адреса у DNS и проверяю прокси…", kind="info")
         self._run(lambda: apply_services(selection))
 
     def _check_visible(self, checked: bool) -> None:

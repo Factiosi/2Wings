@@ -12,7 +12,16 @@ import httpx
 from src.core.debug_log import info, warn
 from src.core.settings import get_settings, save_settings
 from src.modules.dns.core import flush_dns_cache_native
-from src.modules.hosts.catalog import Catalog, CatalogError, has_ipv6_route, load_catalog, service_rows
+from src.modules.hosts.catalog import (
+    Catalog,
+    CatalogError,
+    has_ipv6_route,
+    load_catalog,
+    profile_relays,
+    service_domains,
+    service_rows,
+)
+from src.modules.hosts.live import PROFILE_DOH, LiveResolveError, reachable, relay_rows
 from src.modules.hosts.catalog_update import catalog_check_due, update_catalog
 from src.modules.hosts.hosts_file import (
     DEFAULT_HOSTS,
@@ -83,22 +92,45 @@ def service_block_id(service_id: str) -> str:
     return SERVICE_BLOCK_PREFIX + service_id.lower()
 
 
-def _services_text(text: str, selection: dict[str, str], catalog: Catalog, *, ipv6: bool) -> tuple[str, int, list[str]]:
-    """Rewrite every service block; return (text, entries written, names left empty)."""
-    wanted = {service_block_id(sid) for sid in selection}
+def collect_service_rows(catalog: Catalog, selection: dict[str, str], *, ipv6: bool) -> dict[str, list[tuple[str, str]]]:
+    """Addresses for every chosen service: live for DoH profiles, snapshot otherwise.
+
+    Addresses that do not accept a connection on 443 are dropped, so a dead
+    relay never ends up in hosts.
+    """
+    rows: dict[str, list[tuple[str, str]]] = {}
+    live_domains: dict[str, dict[str, list[str]]] = {}  # profile -> service -> domains
+    for service_id, profile_id in selection.items():
+        service = catalog.service(service_id)
+        if service is None:
+            continue
+        if service.kind == "dns" and profile_id in PROFILE_DOH:
+            live_domains.setdefault(profile_id, {})[service_id] = service_domains(catalog, service_id)
+        else:
+            rows[service_id] = service_rows(catalog, service_id, profile_id, ipv6=ipv6)
+    for profile_id, services in live_domains.items():
+        domains = [domain for names in services.values() for domain in names]
+        by_host: dict[str, list[tuple[str, str]]] = {}
+        known = profile_relays(catalog, profile_id)
+        for address, host in relay_rows(domains, profile_id, ipv6=ipv6, known_relays=known):
+            by_host.setdefault(host, []).append((address, host))
+        for service_id, names in services.items():
+            rows[service_id] = [row for name in dict.fromkeys(names) for row in by_host.get(name, [])]
+    alive = reachable({address for entries in rows.values() for address, _ in entries})
+    return {sid: [row for row in entries if row[0] in alive] for sid, entries in rows.items()}
+
+
+def _services_text(text: str, rows: dict[str, list[tuple[str, str]]]) -> tuple[str, int]:
+    """Rewrite every service block; return (text, entries written)."""
+    wanted = {service_block_id(sid) for sid in rows}
     for block_id in summarize(text).blocks:
         if block_id.startswith(SERVICE_BLOCK_PREFIX) and block_id not in wanted:
             text = set_block(text, block_id, None)
     written = 0
-    empty: list[str] = []
-    for service_id, profile_id in selection.items():
-        service = catalog.service(service_id)
-        rows = service_rows(catalog, service_id, profile_id, ipv6=ipv6) if service else []
-        if service and not rows:
-            empty.append(service.name)
-        text = set_block(text, service_block_id(service_id), rows)
-        written += len(rows)
-    return text, written, empty
+    for service_id, entries in rows.items():
+        text = set_block(text, service_block_id(service_id), entries)
+        written += len(entries)
+    return text, written
 
 
 def apply_services(selection: dict[str, str]) -> tuple[bool, str]:
@@ -108,16 +140,23 @@ def apply_services(selection: dict[str, str]) -> tuple[bool, str]:
     except CatalogError as exc:
         return False, f"Каталог сервисов недоступен: {exc}"
     known = {sid: pid for sid, pid in selection.items() if catalog.service(sid)}
-    text, written, empty = _services_text(read_hosts(), known, catalog, ipv6=has_ipv6_route())
-    ok, error = _write(text, f"services applied: {len(known)} services, {written} entries")
-    if not ok:
-        return False, error
+    try:
+        rows = collect_service_rows(catalog, known, ipv6=has_ipv6_route())
+    except LiveResolveError as exc:
+        return False, f"Не удалось спросить адреса: {exc}. hosts не изменён."
+    empty = [catalog.service(sid).name for sid, entries in rows.items() if not entries]
+    current = read_hosts()
+    text, written = _services_text(current, rows)
+    if text != current:
+        ok, error = _write(text, f"services applied: {len(known)} services, {written} entries")
+        if not ok:
+            return False, error
     settings = get_settings()
     settings.hosts_services = known
     save_settings(settings)
     message = f"Сервисы в hosts: {len(known)}, записей: {written}." if known else "Сервисы убраны из hosts."
     if empty:
-        message += f" Без адресов (нужен IPv6?): {', '.join(empty)}."
+        message += f" Выбранный DNS сейчас не открывает: {', '.join(empty)}."
     return True, message
 
 
@@ -131,7 +170,8 @@ def refresh_catalog_and_services(*, force: bool = False) -> tuple[bool, str]:
         warn("hosts", f"catalog update failed: {exc}")
         return False, f"Не удалось обновить каталог сервисов: {exc}"
     selection = get_settings().hosts_services
-    if changed and selection:
+    if selection:
+        # Relay addresses change between catalog releases too: re-ask on every check.
         ok, applied = apply_services(selection)
         return ok, f"{message} {applied}"
     return True, message

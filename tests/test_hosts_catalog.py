@@ -7,9 +7,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.modules.hosts.catalog import CatalogError, catalog_version, load_catalog, service_rows
+from src.modules.hosts.catalog import CatalogError, catalog_version, load_catalog, service_domains, service_rows
 from src.modules.hosts.hosts_file import set_block, summarize
-from src.modules.hosts.service import _services_text, service_block_id
+from src.modules.hosts.live import TYPE_A, build_query, is_relay, parse_answers
+from src.modules.hosts.service import _services_text, collect_service_rows, service_block_id
 
 SCHEMA = """
 CREATE TABLE catalog_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -84,9 +85,30 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(self.catalog.service("dns.chat").domains, 3)
         self.assertEqual(self.catalog.service("dns.comss_only").profiles, ("comss_dns",))
 
-    def test_profile_rows_with_fallback_and_private_filter(self) -> None:
-        rows = service_rows(self.catalog, "dns.chat", "xbox_dns", ipv6=False)
-        self.assertEqual(rows, [("104.18.23.222", "chat.example"), ("83.217.211.149", "api.chat.example")])
+    def test_snapshot_rows_use_only_the_chosen_profile(self) -> None:
+        # api.chat.example has no XBOX answer: it must not borrow Zapret's (or a dead Comss) relay.
+        self.assertEqual(service_rows(self.catalog, "dns.chat", "xbox_dns", ipv6=False), [("104.18.23.222", "chat.example")])
+        self.assertEqual(
+            service_rows(self.catalog, "dns.chat", "zapret_dns", ipv6=False),
+            [("83.217.211.149", "chat.example"), ("83.217.211.149", "api.chat.example")],
+        )
+        self.assertEqual(service_domains(self.catalog, "dns.chat"), ["chat.example", "api.chat.example", "staging.chat.example"])
+
+    def test_live_profiles_are_asked_and_dead_relays_dropped(self) -> None:
+        with (
+            patch(
+                "src.modules.hosts.service.relay_rows",
+                return_value=[("83.217.211.149", "chat.example"), ("83.217.211.150", "api.chat.example")],
+            ) as relay,
+            patch("src.modules.hosts.service.reachable", return_value={"83.217.211.149", "23.227.38.75"}),
+        ):
+            rows = collect_service_rows(
+                self.catalog, {"dns.chat": "zapret_dns", "hosts.direct": "hosts"}, ipv6=False
+            )
+        relay.assert_called_once()
+        self.assertEqual(relay.call_args.args[1], "zapret_dns")
+        self.assertEqual(rows["dns.chat"], [("83.217.211.149", "chat.example")])
+        self.assertEqual(rows["hosts.direct"], [("23.227.38.75", "d.example")])
 
     def test_direct_rows_take_best_priority_and_gate_ipv6(self) -> None:
         self.assertEqual(service_rows(self.catalog, "hosts.direct", "hosts", ipv6=False), [("23.227.38.75", "d.example")])
@@ -102,11 +124,12 @@ class CatalogTests(unittest.TestCase):
 
     def test_services_text_replaces_and_drops_stale_blocks(self) -> None:
         text = set_block("127.0.0.1 local.test\r\n", service_block_id("dns.gone"), [("1.2.3.4", "gone.example")])
-        text, written, empty = _services_text(text, {"dns.chat": "zapret_dns"}, self.catalog, ipv6=False)
+        rows = {"dns.chat": [("83.217.211.149", "chat.example"), ("83.217.211.149", "api.chat.example")]}
+        text, written = _services_text(text, rows)
         blocks = summarize(text).blocks
         self.assertNotIn(service_block_id("dns.gone"), blocks)
         self.assertEqual(blocks[service_block_id("dns.chat")], 2)
-        self.assertEqual((written, empty), (2, []))
+        self.assertEqual(written, 2)
         self.assertIn("127.0.0.1 local.test", text)
 
     def test_catalog_file_is_closed_after_reading(self) -> None:
@@ -115,6 +138,23 @@ class CatalogTests(unittest.TestCase):
         moved = self.path.with_suffix(".moved")
         self.path.replace(moved)  # fails on Windows while a connection is open
         self.assertTrue(moved.exists())
+
+
+class LiveDnsTests(unittest.TestCase):
+    def test_relay_means_a_foreign_network(self) -> None:
+        self.assertTrue(is_relay("83.217.211.149", ["142.251.153.2"]))
+        # Same CDN, different resolver: not a relay.
+        self.assertFalse(is_relay("142.251.156.119", ["142.251.155.119", "142.251.153.119"]))
+        self.assertTrue(is_relay("83.217.211.149", []))
+        self.assertFalse(is_relay("10.0.0.5", []))
+
+    def test_parse_answer_with_cname_and_compression(self) -> None:
+        query = build_query("gemini.google.com", TYPE_A)
+        header = query[:2] + bytes.fromhex("8180 0001 0002 0000 0000")
+        question = query[12:]
+        cname = bytes.fromhex("c00c 0005 0001 0000003c 0006") + b"\x03www\xc0\x13"
+        a_record = bytes.fromhex("c00c 0001 0001 0000003c 0004") + bytes([83, 217, 211, 149])
+        self.assertEqual(parse_answers(header + question + cname + a_record, TYPE_A), ["83.217.211.149"])
 
 
 class SettingsFieldTests(unittest.TestCase):

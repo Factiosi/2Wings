@@ -167,11 +167,36 @@ def _best_per_host(rows, *, ipv6: bool) -> list[tuple[str, str]]:
     return [(best[key][1], key[0]) for key in order]
 
 
-def service_rows(catalog: Catalog, service_id: str, profile_id: str, *, ipv6: bool) -> list[tuple[str, str]]:
-    """``(address, hostname)`` lines for one service.
+def profile_relays(catalog: Catalog, profile_id: str, *, min_names: int = 3) -> set[str]:
+    """Addresses a profile answered with for many names in the snapshot — its relays."""
+    with closing(_connect(catalog.path)) as connection:
+        return {
+            str(address)
+            for address, count in connection.execute(
+                "SELECT ip_address, COUNT(DISTINCT domain_id) FROM dns_answers WHERE profile_id = ? GROUP BY ip_address",
+                (profile_id,),
+            )
+            if count >= min_names and _usable(str(address), ipv6=True)
+        }
 
-    For DNS services a domain the chosen profile has no answer for falls back to
-    the other profiles in display order, so the service still opens as a whole.
+
+def service_domains(catalog: Catalog, service_id: str) -> list[str]:
+    """Domains of a DNS service, in catalog order."""
+    with closing(_connect(catalog.path)) as connection:
+        return [
+            str(hostname).lower()
+            for (hostname,) in connection.execute(
+                "SELECT hostname FROM domains WHERE service_id = ? ORDER BY sort_order, domain_id", (service_id,)
+            )
+        ]
+
+
+def service_rows(catalog: Catalog, service_id: str, profile_id: str, *, ipv6: bool) -> list[tuple[str, str]]:
+    """``(address, hostname)`` lines for one service from the catalog snapshot.
+
+    Only the chosen profile's answers count: borrowing another profile's relay
+    once wrote a dead Comss address for Gemini while Zapret DNS was chosen.
+    Profiles with a DoH endpoint are asked live instead (``live.relay_rows``).
     """
     service = catalog.service(service_id)
     if service is None:
@@ -182,21 +207,10 @@ def service_rows(catalog: Catalog, service_id: str, profile_id: str, *, ipv6: bo
                 "SELECT hostname, ip_address, priority FROM hosts_entries WHERE service_id = ? ORDER BY entry_id",
                 (service_id,),
             ).fetchall()
-            return _best_per_host(rows, ipv6=ipv6)
-        order = [profile_id, *[pid for pid, _ in catalog.profiles if pid != profile_id]]
-        rank = {pid: index for index, pid in enumerate(order)}
-        answers = connection.execute(
-            "SELECT d.domain_id, d.hostname, a.profile_id, a.ip_address, a.priority "
-            "FROM domains d JOIN dns_answers a USING(domain_id) WHERE d.service_id = ? "
-            "ORDER BY d.sort_order, d.domain_id",
-            (service_id,),
-        ).fetchall()
-    per_domain: dict[int, list[tuple[str, str, int, str]]] = {}
-    for domain_id, hostname, pid, address, priority in answers:
-        if pid in rank and _usable(address, ipv6=ipv6):
-            per_domain.setdefault(domain_id, []).append((hostname, pid, int(priority), address))
-    rows = []
-    for candidates in per_domain.values():
-        top = min(rank[pid] for _, pid, _, _ in candidates)
-        rows.extend((hostname, address, priority) for hostname, pid, priority, address in candidates if rank[pid] == top)
+        else:
+            rows = connection.execute(
+                "SELECT d.hostname, a.ip_address, a.priority FROM domains d JOIN dns_answers a USING(domain_id) "
+                "WHERE d.service_id = ? AND a.profile_id = ? ORDER BY d.sort_order, d.domain_id",
+                (service_id, profile_id),
+            ).fetchall()
     return _best_per_host(rows, ipv6=ipv6)
