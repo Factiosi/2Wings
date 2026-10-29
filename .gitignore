@@ -52,3 +52,6 @@ nuitka-crash-report.xml
 /runtime-version.txt
 /lua/
 /engine-version.txt
+
+# Claude Code: локальные настройки агента
+/.claude/settings.local.json
