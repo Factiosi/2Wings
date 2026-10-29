@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from src.modules.strategy_testing import cache
 from src.modules.strategy_testing import results as tr
-from src.modules.strategy_testing.probe import load_targets
+from src.modules.strategy_testing.probe import TargetProbeResult, load_targets, score_results
 from src.modules.strategy_testing.runner import INTER_STRATEGY_PAUSE_SECONDS
 from src.ui.pages.strategies import compute_expanded_state
 
@@ -51,6 +51,17 @@ class ProbeTargetTests(unittest.TestCase):
 
         self.assertEqual([target.name for target in targets], ["ExampleWeb", "ExamplePing"])
         self.assertEqual(targets[1].ping_host, "1.1.1.1")
+
+
+class ScoreTests(unittest.TestCase):
+    def test_tls13_does_not_affect_the_verdict(self) -> None:
+        results = [
+            TargetProbeResult("A", ("HTTP:OK", "TLS1.2:OK", "TLS1.3:UNSUP"), "10 ms"),
+            TargetProbeResult("B", ("HTTP:OK", "TLS1.2:OK", "TLS1.3:ERROR"), "10 ms"),
+        ]
+        self.assertEqual(score_results(results), (4, 4))
+        results.append(TargetProbeResult("C", ("HTTP:OK", "TLS1.2:ERROR", "TLS1.3:OK"), "10 ms"))
+        self.assertEqual(score_results(results), (5, 6))
 
 
 class ResultCacheSchemaTests(unittest.TestCase):

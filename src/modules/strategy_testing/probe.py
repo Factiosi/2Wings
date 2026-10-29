@@ -201,12 +201,19 @@ def probe_all_targets_with_callback(
     return collected
 
 
+# TLS 1.3 is shown but not scored: curl on Windows 10 (Schannel) cannot do it, and
+# sites still accept TLS 1.2, so a strategy that passes everything else works fully.
+UNSCORED_LABELS = ("TLS1.3:",)
+
+
 def score_results(results: list[TargetProbeResult]) -> tuple[int, int]:
     passed = 0
     total = 0
     for item in results:
         if item.http_tokens:
             for token in item.http_tokens:
+                if token.startswith(UNSCORED_LABELS):
+                    continue
                 total += 1
                 if token.endswith(":OK"):
                     passed += 1
