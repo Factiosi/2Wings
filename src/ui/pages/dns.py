@@ -38,7 +38,7 @@ class DnsPage:
         self._applied_snapshot: str | None = None
         self._flush_timer_running = False
 
-        self._status_text = ui_text("", color=T.TEXT_MUTED, size=12, selectable=True)
+        self._status_text = ui_text("", color=T.TEXT_MUTED, size=T.FONT_CAPTION, selectable=True)
         self._provider_options: list[tuple[str, str]] = []
         self._providers_map: dict[str, tuple[list[str], list[str]]] = {}
 
@@ -237,7 +237,7 @@ class DnsPage:
             if choice == CUSTOM_DNS_KEY:
                 primary = self._primary.strip()
                 if not primary:
-                    return False, "Укажите основной DNS."
+                    return False, "Укажите основной DNS"
                 secondary = self._secondary.strip() or None
                 return apply_custom(adapters, primary, secondary)
             ipv4, ipv6 = self._providers_map.get(choice, ([], []))

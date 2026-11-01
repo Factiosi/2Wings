@@ -34,7 +34,7 @@ class TgWsProxyPage:
         self._applying = False
         self._rows: list[tuple[ft.TextField, ft.TextField]] = []
         self._dc_column = ft.Column(spacing=12, tight=True)
-        self._status_row = ft.Row(spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        self._status_row = ft.Row(spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         self._switch: LeoSwitch | None = None
         self._port: ft.TextField | None = None
         self._queued = False
@@ -57,10 +57,10 @@ class TgWsProxyPage:
                 ft.Container(content=self._switch.control, padding=ft.Padding.only(bottom=12)),
                 ft.Row(
                     [
-                        ui_text("Статус работы:", color=T.TEXT_MUTED),
+                        ui_text("Статус", color=T.TEXT_MUTED),
                         self._status_row,
                     ],
-                    spacing=10,
+                    spacing=8,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     wrap=True,
                 ),
@@ -121,7 +121,7 @@ class TgWsProxyPage:
 
     def _on_remove_row(self, pair: tuple[ft.TextField, ft.TextField]) -> None:
         if len(self._rows) <= 1:
-            show_toast(self.page, "Нужен хотя бы один дата-центр.", kind="error")
+            show_toast(self.page, "Нужен хотя бы один дата-центр", kind="error")
             return
         index = self._rows.index(pair)
         self._rows.pop(index)
@@ -207,7 +207,7 @@ class TgWsProxyPage:
                     and new_enabled
                 )
                 if failed and self._switch is not None:
-                    message = str(result.get("error") or "Не удалось запустить TG WS Proxy.")
+                    message = str(result.get("error") or "Не удалось запустить TG WS Proxy")
                     self._switch.set_value(False)
                     current = get_settings()
                     current.tg_ws_proxy_enabled = False
@@ -242,7 +242,7 @@ class TgWsProxyPage:
         result = daemon_tg_proxy_status()
         link = str(result.get("link") or "")
         if not result.get("running") or not link:
-            show_toast(self.page, "Сначала включите TG WS Proxy.", kind="error")
+            show_toast(self.page, "Сначала включите TG WS Proxy", kind="error")
             return
         if not webbrowser.open(link):
-            show_toast(self.page, "Не удалось открыть Telegram.", kind="error")
+            show_toast(self.page, "Не удалось открыть Telegram", kind="error")

@@ -140,7 +140,7 @@ class SettingsPage:
             "домен попадает в list-exclude-user.txt, а для игровых и IP-профилей — адрес в ipset-exclude-user.txt. "
             "Сайт откроется со следующей попытки.",
             color=T.TEXT_MUTED,
-            size=12,
+            size=T.FONT_CAPTION,
         )
 
         advanced_cb = quiet_checkbox(
@@ -152,7 +152,7 @@ class SettingsPage:
         advanced_hint = ui_text(
             "Открывает «Изменение DNS», «Редактирование hosts» и выбор источника стратегий, в том числе свою стратегию.",
             color=T.TEXT_MUTED,
-            size=12,
+            size=T.FONT_CAPTION,
         )
         strategy_controls: list[ft.Control] = [source_select] if settings.advanced_mode else []
 
@@ -267,7 +267,7 @@ class SettingsPage:
                     "Место хранения",
                     ui_text(
                         f"По умолчанию: {default_app_data_root()}",
-                        size=12,
+                        size=T.FONT_CAPTION,
                         color=T.TEXT_MUTED,
                     ),
                     ft.Row(
@@ -282,7 +282,7 @@ class SettingsPage:
                     ui_text(
                         "Консоль отладки пишет все действия приложения подробно. "
                         "Записи старше 1 часа удаляются автоматически.",
-                        size=12,
+                        size=T.FONT_CAPTION,
                         color=T.TEXT_MUTED,
                     ),
                     ft.Row(
@@ -329,7 +329,7 @@ class SettingsPage:
         sections.append(
             block_section(
                 "Обновления Tigo",
-                ui_text(f"{APP_NAME} v{__version__}", size=12, color=T.TEXT_MUTED),
+                ui_text(f"{APP_NAME} v{__version__}", size=T.FONT_CAPTION, color=T.TEXT_MUTED),
                 app_auto_check_cb,
                 app_auto_install_cb,
                 ft.Row(
@@ -629,7 +629,7 @@ class SettingsPage:
             if removed:
                 show_toast(self.page, MSG_STALE_REMOVED, kind="info")
             else:
-                show_toast(self.page, "Нет версий для удаления.", kind="info")
+                show_toast(self.page, "Нет версий для удаления", kind="info")
 
         def runner():
             result = work()

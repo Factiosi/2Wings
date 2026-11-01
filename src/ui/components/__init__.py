@@ -20,7 +20,7 @@ MENU_MAX_HEIGHT = 280
 MENU_ITEM_HEIGHT = 38
 MENU_EDGE_INSET = 4
 MENU_POPUP_VPAD = 8
-MENU_ITEM_RADIUS = 8
+MENU_ITEM_RADIUS = 4  # панель меню 8 минус поле 4: вложенный радиус не спорит с внешним
 def lucide_icon(name: str, *, color: str, size: int = 18) -> ft.Image:
     """Lucide icon from assets/icons/lucide (ISC); the stroke takes ``color``."""
     return ft.Image(
@@ -35,7 +35,7 @@ def lucide_icon(name: str, *, color: str, size: int = 18) -> ft.Image:
 def menu_shadow() -> ft.BoxShadow:
     return ft.BoxShadow(
         blur_radius=16,
-        color="#54000000" if T.mode == "dark" else "#14000000",
+        color=T.SHADOW,
         offset=ft.Offset(0, 4),
     )
 BUTTON_HEIGHT = T.BUTTON_HEIGHT
@@ -362,7 +362,7 @@ def status_pill(status: str, label: str | None = None, *, dense: bool = False) -
     padding = (
         ft.Padding.symmetric(horizontal=8, vertical=2)
         if dense
-        else ft.Padding.symmetric(horizontal=12, vertical=6)
+        else ft.Padding.symmetric(horizontal=12, vertical=4)
     )
     return ft.Container(
         content=ft.Row(
@@ -383,7 +383,7 @@ def block_section(title: str | None, *controls: ft.Control) -> ft.Container:
     header: list[ft.Control] = []
     if title:
         header.append(
-            ui_text(title, size=T.FONT_LABEL, color=T.TEXT_MUTED, weight=ft.FontWeight.W_500)
+            ui_text(title, size=T.FONT_SECTION, weight=ft.FontWeight.W_600, family=T.FONT_DISPLAY)
         )
     return ft.Container(
         content=ft.Column(
@@ -472,7 +472,7 @@ def make_text_field(
         height=T.FIELD_HEIGHT,
         text_size=T.FONT_BODY,
         text_style=ft.TextStyle(font_family=T.FONT_FAMILY, color=T.TEXT),
-        content_padding=ft.Padding.symmetric(horizontal=14, vertical=0),
+        content_padding=ft.Padding.symmetric(horizontal=12, vertical=0),
         border_radius=border_radius,
         filled=True,
         bgcolor=T.SURFACE,
@@ -880,8 +880,8 @@ def make_select(
         height=T.FIELD_HEIGHT,
         bgcolor=T.SURFACE,
         border=ft.Border.all(1, T.BORDER),
-        border_radius=T.RADIUS_L,
-        padding=ft.Padding.symmetric(horizontal=14, vertical=0),
+        border_radius=T.RADIUS,
+        padding=ft.Padding.symmetric(horizontal=12, vertical=0),
         on_size_change=on_field_size,
         opacity=0.72 if disabled else 1.0,
     )

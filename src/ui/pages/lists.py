@@ -29,7 +29,7 @@ class ListsPage:
         version_rows = [
             self._list_row(entry.name, entry.path)
             for entry in list_versioned_entries()
-        ] or [ui_text("Нет листов для активной версии.", color=T.TEXT_MUTED, size=12)]
+        ] or [ui_text("Нет листов для активной версии", color=T.TEXT_MUTED, size=T.FONT_CAPTION)]
 
         strategy_section_title = (
             f"Листы стратегий (не рекомендуется к редактированию) · flowseal {version_label}"

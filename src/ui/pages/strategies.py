@@ -151,7 +151,7 @@ class StrategiesPage:
         self._chevron_by_id.clear()
 
         if not self._strategies:
-            rows.append(ui_text("Нет доступных стратегий.", color=T.TEXT_MUTED))
+            rows.append(ui_text("Нет доступных стратегий", color=T.TEXT_MUTED))
         else:
             self._checkboxes.clear()
             for index, strategy in enumerate(self._sorted_strategies()):
@@ -212,7 +212,7 @@ class StrategiesPage:
             return None
         return ft.Column(
             [self._probe_table_for(strategy_id).control, self._probe_actions_for(strategy_id)],
-            spacing=10,
+            spacing=8,
             tight=True,
         )
 
@@ -525,7 +525,7 @@ class StrategiesPage:
             on_click=self._stop_tests,
             disabled=True,
         )
-        self._status_text = ui_text("", size=12, color=T.TEXT_MUTED)
+        self._status_text = ui_text("", size=T.FONT_CAPTION, color=T.TEXT_MUTED)
 
         self._strategy_actions = ft.Row(
             [self._start_btn, self._stop_btn],
@@ -548,7 +548,7 @@ class StrategiesPage:
 
         if not version:
             self._strategy_list.controls = [
-                ui_text("Сначала установите версию flowseal.", color=T.TEXT_MUTED),
+                ui_text("Сначала установите версию flowseal", color=T.TEXT_MUTED),
             ]
         else:
             self._populate_list()
@@ -609,12 +609,12 @@ class StrategiesPage:
             return
         settings = get_settings()
         if settings.selected_strategy == strategy_id:
-            self._snack("Стратегия уже выбрана.")
+            self._snack("Стратегия уже выбрана")
             return
         settings.selected_strategy = strategy_id
         save_settings(settings)
         self._refresh_strategy_action_buttons()
-        self._snack("Стратегия применена но не запущена.")
+        self._snack("Стратегия применена, но не запущена")
 
     def _choose_and_start(self, strategy_id: str) -> None:
         if self._tests_running or not tr.is_tested(strategy_id):
@@ -643,9 +643,9 @@ class StrategiesPage:
             def finish() -> None:
                 ok, msg = result
                 if ok:
-                    self._snack("Стратегия применена и winws запущен.")
+                    self._snack("Стратегия применена, winws запущен")
                 else:
-                    self._snack(msg or "Не удалось запустить winws.", error=True)
+                    self._snack(msg or "Не удалось запустить winws", error=True)
 
             self._ui(finish)
 

@@ -157,7 +157,7 @@ def show_toast(
                 alignment=ft.Alignment.CENTER,
             ),
         ],
-        spacing=10,
+        spacing=8,
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
         expand=True,
     )
@@ -181,11 +181,11 @@ def show_toast(
         bgcolor=bg,
         border=ft.Border.all(1, T.BORDER),
         border_radius=T.RADIUS_L,
-        padding=ft.Padding.only(left=16, right=4, top=10, bottom=10),
+        padding=ft.Padding.only(left=16, right=4, top=12, bottom=12),
         shadow=ft.BoxShadow(
             blur_radius=18,
             spread_radius=0,
-            color="#00000055",
+            color=T.SHADOW,
             offset=ft.Offset(0, 6),
         ),
         ink=on_click is not None,

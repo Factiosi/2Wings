@@ -90,7 +90,7 @@ class HostsPage:
         file_info = ui_text(
             f"{hosts_path()} · записей: {state.summary.entries}, из них Tigo: {tigo_entries}",
             color=T.TEXT_MUTED,
-            size=12,
+            size=T.FONT_CAPTION,
             selectable=True,
         )
         self._root.content = scroll_page(
@@ -121,7 +121,7 @@ class HostsPage:
         if self._catalog is None:
             return block_section(
                 "Сервисы",
-                ui_text(f"Каталог сервисов недоступен: {self._catalog_error}", color=T.TEXT_MUTED, size=12),
+                ui_text(f"Каталог сервисов недоступен: {self._catalog_error}", color=T.TEXT_MUTED, size=T.FONT_CAPTION),
                 pill_button("Скачать каталог", on_click=self._update_catalog),
             )
         written = {
@@ -166,7 +166,7 @@ class HostsPage:
         )
         return block_section(
             "Сервисы",
-            ui_text(hint, color=T.TEXT_MUTED, size=12),
+            ui_text(hint, color=T.TEXT_MUTED, size=T.FONT_CAPTION),
             ft.Row([ft.Container(profile_select, expand=True), ft.Container(search, expand=True)], spacing=12),
             ft.Column(groups, spacing=2, tight=True),
             ft.Row(
@@ -175,7 +175,7 @@ class HostsPage:
                     pill_button("Выделить всё", on_click=lambda _: self._check_visible(True)),
                     pill_button("Снять всё", on_click=lambda _: self._check_visible(False)),
                     pill_button("Обновить каталог", on_click=self._update_catalog),
-                    ui_text(f"Каталог {self._catalog.version}", color=T.TEXT_MUTED, size=12),
+                    ui_text(f"Каталог {self._catalog.version}", color=T.TEXT_MUTED, size=T.FONT_CAPTION),
                 ],
                 spacing=8,
                 wrap=True,
@@ -209,7 +209,7 @@ class HostsPage:
                 ft.Column(
                     [
                         ui_text(preset.title, weight=ft.FontWeight.W_500),
-                        ui_text(preset.description, color=T.TEXT_MUTED, size=12),
+                        ui_text(preset.description, color=T.TEXT_MUTED, size=T.FONT_CAPTION),
                     ],
                     spacing=2,
                     tight=True,

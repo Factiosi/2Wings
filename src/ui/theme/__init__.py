@@ -177,8 +177,9 @@ class ThemeTokens:
         self.FONT_MONO = "JetBrains Mono"
         self.FONT_BODY = 14
         self.FONT_LABEL = 14
-        self.FONT_CAPTION = 12
-        self.FONT_TITLE = 28
+        self.FONT_CAPTION = px("text-2xs")
+        self.FONT_TITLE = px("text-2xl")
+        self.FONT_SECTION = px("text-md")
 
         self.SPACE_LABEL = 4
         self.SPACE_FIELD = 16
@@ -195,7 +196,8 @@ class ThemeTokens:
         self.RADIUS_BADGE = px("radius-badge")
         self.RADIUS_TOGGLE = px("radius-toggle")
         self.RADIUS_CHECKBOX = px("radius-checkbox")
-        self.SECTION_PAD = 12
+        self.SECTION_PAD = px("space-card-padding-sm")
+        self.SHADOW = flet_color(_UMBRAE[self.mode]["effect-shadow"])
 
         self.SIDEBAR_WIDTH = px("size-layout-sidebar")
         self.RAIL_EDGE = px("space-rail-edge")

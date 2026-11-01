@@ -161,7 +161,7 @@ class ProbeTableView:
                     ui_text(item.detail.strip(), size=PROBE_FONT_SIZE, color=T.STATUS_ERROR),
                     self._table,
                 ],
-                spacing=6,
+                spacing=8,
                 tight=True,
             )
         elif self._root is not self._table:
@@ -227,7 +227,7 @@ class ProbeTableView:
             ),
             bgcolor=T.SUNKEN,
             border_radius=4,
-            padding=ft.Padding.symmetric(horizontal=8, vertical=6),
+            padding=ft.Padding.symmetric(horizontal=8, vertical=4),
             margin=ft.Margin.only(bottom=4),
         )
 

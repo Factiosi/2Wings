@@ -64,7 +64,7 @@ class HomePage:
         self.page = page
         self._on_strategies_available = on_strategies_available
         self._busy = False
-        self._status_row = ft.Row(spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        self._status_row = ft.Row(spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         self._selected_strategy_id = get_settings().selected_strategy or ""
         self._custom_args = get_settings().custom_strategy_args or ""
         self._polling = False
@@ -101,10 +101,10 @@ class HomePage:
             "Запуск zapret",
             ft.Row(
                 [
-                    ui_text("Статус работы:", color=T.TEXT_MUTED),
+                    ui_text("Статус", color=T.TEXT_MUTED),
                     self._status_row,
                 ],
-                spacing=10,
+                spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 wrap=True,
             ),
@@ -127,12 +127,12 @@ class HomePage:
                 focused_border_color=T.FOCUS,
                 focused_border_width=2,
                 cursor_color=T.BUTTON,
-                text_style=ft.TextStyle(font_family=T.FONT_MONO, size=12),
+                text_style=ft.TextStyle(font_family=T.FONT_MONO, size=T.FONT_CAPTION),
             )
             sections.append(
                 block_section(
                     "Своя стратегия",
-                    ui_text(CUSTOM_HINT, size=12, color=T.TEXT_MUTED),
+                    ui_text(CUSTOM_HINT, size=T.FONT_CAPTION, color=T.TEXT_MUTED),
                     custom_field,
                 )
             )
@@ -202,7 +202,7 @@ class HomePage:
 
     def on_mounted(self) -> None:
         runtime_state.subscribe(self._on_runtime_event)
-        log_info("bootstrap", f"{APP_NAME} готов к работе.")
+        log_info("bootstrap", f"{APP_NAME} готов к работе")
         self._start_strategies_poll()
 
     def _start_strategies_poll(self) -> None:
@@ -344,11 +344,11 @@ class HomePage:
             return
         self._sync_selected_strategy()
         if not is_daemon_running():
-            self._show_message("Фоновый процесс Tigo не запущен.", error=True)
+            self._show_message("Фоновый процесс Tigo не запущен", error=True)
             return
         status = get_effective_runtime_status()
         if status.running or status.phase == RuntimePhase.STARTING:
-            self._show_message("Zapret уже запущен или запускается.")
+            self._show_message("Zapret уже запущен или запускается")
             return
 
         settings = get_settings()
@@ -399,11 +399,11 @@ class HomePage:
         if self._busy:
             return
         if not is_daemon_running():
-            self._show_message("Фоновый процесс Tigo не запущен.", error=True)
+            self._show_message("Фоновый процесс Tigo не запущен", error=True)
             return
         status = get_effective_runtime_status()
         if not status.running:
-            self._show_message("Zapret не запущен.")
+            self._show_message("Zapret не запущен")
             return
 
         debug("ui", "stop zapret")
@@ -452,7 +452,7 @@ class HomePage:
     def _on_game_filter_change(self, mode: str) -> None:
         settings = get_settings()
         if not settings.active_version:
-            self._show_message("Сначала установите версию flowseal.", error=True)
+            self._show_message("Сначала установите версию flowseal", error=True)
             return
         apply_game_filter(settings.active_version, mode)  # type: ignore[arg-type]
         label = game_filter_label(mode)
@@ -476,7 +476,7 @@ class HomePage:
     def _on_ipset_change(self, mode: str) -> None:
         settings = get_settings()
         if not settings.active_version:
-            self._show_message("Сначала установите версию flowseal.", error=True)
+            self._show_message("Сначала установите версию flowseal", error=True)
             return
         try:
             apply_ipset_mode(settings.active_version, mode)  # type: ignore[arg-type]
