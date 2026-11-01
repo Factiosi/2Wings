@@ -1,3 +1,3 @@
 """Tigo application release version."""
 
-__version__ = "1.5.8-dev"
+__version__ = "1.5.8"

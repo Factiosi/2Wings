@@ -2,7 +2,7 @@
 ; Build dist\Tigo first, then compile this file with ISCC.exe.
 
 #define MyAppName "Tigo"
-#define MyAppVersion "1.5.7"
+#define MyAppVersion "1.5.8"
 #define MyAppPublisher "Tigo"
 #define MyAppExeName "Tigo.exe"
 #define MyAppId "{{CB93C415-8593-4898-99D8-D1B69E7C8C38}"
