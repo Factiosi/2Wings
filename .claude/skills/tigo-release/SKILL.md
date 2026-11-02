@@ -14,7 +14,7 @@ argument-hint: "X.Y.Z"
 
 ## Шаги
 
-1. **Проверка.** Ветка `experimental`, дерево чистое (`.claude/settings.local.json` и черновики пользователя не трогать). Тесты: `.venv\Scripts\python -m unittest discover -s tests`.
+1. **Проверка.** Ветка `experimental`, дерево чистое (`.claude/settings.local.json` и черновики пользователя не трогать). Тесты: `.venv\Scripts\python -m unittest discover -s tests`. Сверить `README.md` и `AGENTS.md` с коммитами пачки (`git log master..experimental`): новое поведение должно быть описано до коммита выпуска.
 2. **Коммит выпуска** на `experimental`: номер `X.Y.Z` без `-dev` в `src/core/version.py` и в `#define MyAppVersion` в `tools/tigo_installer.iss`. Строка — «Релиз X.Y.Z».
 3. **master:** `git checkout master`, `git merge --ff-only experimental`. Коммита слияния нет.
 4. **Сборка:** `powershell -File scripts\deploy_release.ps1 -Version X.Y.Z -DryRun` (без `-ExecutionPolicy Bypass` — среда его блокирует). Скрипт требует ветку `master`, гоняет Nuitka, Inno Setup и тесты, кладёт `dist\installer\Tigo-Setup-X.Y.Z.exe` и `.sha256`. Запущенный `dist\Tigo\Tigo.exe` закрыть заранее.
