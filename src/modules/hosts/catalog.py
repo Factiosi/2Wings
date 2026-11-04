@@ -3,7 +3,7 @@
 The catalog is the SQLite file zapretgui ships (schema 1). Two kinds of
 services live there:
 
-* ``dns`` — every domain has answers per DNS profile (Zapret DNS, XBOX DNS…):
+* ``dns`` — every domain has answers per DNS profile (XBOX DNS, Comss DNS…):
   the address that profile's server gives from abroad;
 * ``hosts`` — fixed ``address host`` pairs (Discord, YouTube, GitHub…).
 
@@ -25,6 +25,8 @@ from src.core.paths import cache_dir, program_root
 SCHEMA_VERSION = "1"
 CATALOG_NAME = "hosts_catalog.sqlite3"
 DIRECT_PROFILE = "hosts"
+# Listed by zapretgui, not offered by Tigo: this server answers over DoH only.
+HIDDEN_PROFILES = ("zapret_dns",)
 CATEGORY_TITLES = {"ai": "Нейросети", "other": "Сервисы", "direct": "Прямые записи"}
 
 
@@ -107,6 +109,7 @@ def load_catalog(path: Path | None = None) -> Catalog:
             for pid, name in connection.execute(
                 "SELECT profile_id, name FROM dns_profiles WHERE enabled = 1 ORDER BY sort_order, name"
             )
+            if pid not in HIDDEN_PROFILES
         )
         answered: dict[str, set[str]] = {}
         for service_id, profile_id in connection.execute(
@@ -195,7 +198,7 @@ def service_rows(catalog: Catalog, service_id: str, profile_id: str, *, ipv6: bo
     """``(address, hostname)`` lines for one service from the catalog snapshot.
 
     Only the chosen profile's answers count: borrowing another profile's relay
-    once wrote a dead Comss address for Gemini while Zapret DNS was chosen.
+    once wrote a dead relay of one profile for Gemini while another was chosen.
     Profiles with a DoH endpoint are asked live instead (``live.relay_rows``).
     """
     service = catalog.service(service_id)

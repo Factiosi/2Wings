@@ -1,7 +1,7 @@
 """Ask DNS profiles for their current answers instead of trusting the catalog snapshot.
 
 The catalog is a snapshot: relay addresses change and some die (a Comss relay
-written for Gemini stopped answering while Zapret DNS already proxied Gemini).
+written for Gemini stopped answering while another profile already proxied it).
 For profiles that publish a DoH endpoint Tigo resolves every domain at apply
 time and keeps only *relay* answers — those that differ from what a neutral
 resolver returns; a domain the profile does not proxy is left to normal DNS.
@@ -21,7 +21,6 @@ import httpx
 from src.core.debug_log import debug
 
 PROFILE_DOH = {
-    "zapret_dns": "https://dns.zapret.moe/dns-query",
     "comss_dns": "https://dns.comss.one/dns-query",
     "xbox_dns": "https://xbox-dns.ru/dns-query",
 }
@@ -113,10 +112,13 @@ def relay_rows(
             answers = list(pool.map(ask, jobs))
     if jobs and all(profile is None for profile, _ in answers):
         raise LiveResolveError(f"DNS-сервер {url} не отвечает")
+    # A CDN answers from many networks depending on the name and the resolver, so an
+    # address counts as real if the neutral resolver gave its network for any name here.
+    neutral = [address for _profile, reference in answers for address in reference or []]
     candidates: list[tuple[str, str]] = []
-    for (domain, _qtype), (profile, reference) in zip(jobs, answers):
+    for (domain, _qtype), (profile, _reference) in zip(jobs, answers):
         for address in profile or []:
-            if is_relay(address, reference or []):
+            if is_relay(address, neutral):
                 candidates.append((address, domain))
                 break  # hosts uses one line per name and family
     shared = {address for address, _ in candidates if sum(1 for other, _ in candidates if other == address) >= 2}
@@ -126,7 +128,7 @@ def relay_rows(
 def is_relay(address: str, neutral: list[str]) -> bool:
     """A relay answer points outside every network the neutral resolver answers with.
 
-    Different resolvers hand out different addresses of the same CDN (Zapret DNS
+    Different resolvers hand out different addresses of the same CDN (a profile
     and Google DNS give other 142.251.x.x for www.google.com), so only a foreign
     network (/16 for IPv4, /48 for IPv6) means the profile proxies the domain.
     """

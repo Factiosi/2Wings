@@ -2,21 +2,21 @@
 name: tigo-hosts
 description: >-
   Редактор hosts Tigo, каталог сервисов zapretgui, живые ответы DNS-профилей
-  (Zapret DNS, Comss, XBOX), страница DNS. Применять при правке
+  (Comss, XBOX), страница DNS. Применять при правке
   src/modules/hosts, src/modules/dns, страниц hosts и DNS, и когда у
   пользователя сервис (Gemini, ChatGPT…) не открывается через hosts или DNS.
 ---
 
 # hosts и DNS в Tigo
 
-Сначала прочитай раздел «Редактор hosts» в `AGENTS.md` и `docs/ZAPRET-DNS.md`.
+Сначала прочитай раздел «Редактор hosts» в `AGENTS.md`.
 
 ## Правила кода
 
 - В hosts — только свои блоки `# >>> tigo:<id> >>>`; чужие строки не трогать. Копия `hosts.tigo.bak` перед первой записью.
 - Один профиль на все сервисы, без подмены другим профилем. Профили с DoH (`PROFILE_DOH` в `hosts/live.py`) спрашиваются вживую; прокси — адрес вне сетей ответа Google DNS, общий для двух и более имён или известный по каталогу. Каждый адрес перед записью проверяется подключением к 443.
 - SQLite — только `closing(sqlite3.connect(...))`.
-- DNS на странице: Zapret DNS, Comss, Cloudflare, Google — без согласия не расширять.
+- DNS на странице: Comss, Cloudflare, Google, Quad9 — без согласия не расширять.
 
 ## Разбор жалобы «сервис не открывается»
 

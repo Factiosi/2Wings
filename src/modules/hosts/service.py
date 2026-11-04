@@ -160,6 +160,15 @@ def apply_services(selection: dict[str, str]) -> tuple[bool, str]:
     return True, message
 
 
+def hosts_uses_addresses(addresses: set[str]) -> bool:
+    """True when an active hosts line points at one of the addresses."""
+    for line in read_hosts().splitlines():
+        parts = line.split("#", 1)[0].split()
+        if parts and parts[0].lower() in addresses:
+            return True
+    return False
+
+
 def refresh_catalog_and_services(*, force: bool = False) -> tuple[bool, str]:
     """Fetch a newer catalog when due and rewrite the chosen services with it."""
     if not force and not catalog_check_due():

@@ -11,7 +11,6 @@
 [![Релиз](https://img.shields.io/github/v/release/Factiosi/Tigo?label=релиз&color=8b5cf6)](https://github.com/Factiosi/Tigo/releases/latest)
 [![Скачиваний](https://img.shields.io/github/downloads/Factiosi/Tigo/total?label=скачиваний&color=8b5cf6)](https://github.com/Factiosi/Tigo/releases)
 [![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows&logoColor=white)](#требования)
-[![Zapret DNS](https://img.shields.io/badge/Zapret%20DNS-состояние-1f6fd6)](https://dns.zapret.moe/)
 
 </div>
 
@@ -22,18 +21,11 @@
 - **Автоисключения.** Сайт, который стратегия ломает (ошибка `ERR_SSL_PROTOCOL_ERROR`), Tigo сам вносит в исключения. Отключается в настройках.
 - **Своя стратегия.** Аргументы winws1 или winws2 с подстановками `%LISTS%` и `%BIN%`.
 - **Фоновая работа.** Обход держит фоновый процесс со значком в трее; окно можно закрыть.
-- **Изменение DNS.** Zapret DNS, Comss DNS, Cloudflare и Google в один клик для всех адаптеров.
+- **Изменение DNS.** Comss DNS, Cloudflare, Google и Quad9 в один клик для всех адаптеров.
 - **Редактор hosts.** Готовые наборы (Telegram в браузере, блокировка MAX и гос. СМИ) и сервисы через DNS-профили: нейросети, Spotify, Twitch, Notion, Discord, YouTube и другие. Адреса берутся у выбранного DNS в момент применения, неотвечающие не записываются.
 - **TG WS Proxy.** Локальный прокси для Telegram.
 
 Изменение DNS, редактор hosts и выбор источника стратегий появляются после галочки «Настройки для продвинутых пользователей» в **Настройках**.
-
-## Zapret DNS
-
-DNS-сервер проекта Zapret: открывает сервисы, закрытые для России, — ChatGPT, Gemini, Claude, Copilot, Spotify, Notion и ещё около девяноста.
-
-- Полный список сервисов и адреса: [`docs/ZAPRET-DNS.md`](docs/ZAPRET-DNS.md)
-- Состояние сервера: [dns.zapret.moe](https://dns.zapret.moe/)
 
 ## Требования
 

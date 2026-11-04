@@ -569,8 +569,6 @@ def flush_dns_cache_native() -> bool:
 
 # DoH Template URLs
 DOH_TEMPLATES = {
-    "83.217.211.149": "https://dns.zapret.moe/dns-query",
-    "2a03:afc0:9::235d": "https://dns.zapret.moe/dns-query",
     "83.220.169.155": "https://dns.comss.one/dns-query",
     "212.109.195.93": "https://dns.comss.one/dns-query",
     "1.1.1.1": "https://cloudflare-dns.com/dns-query",

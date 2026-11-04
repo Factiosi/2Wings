@@ -21,6 +21,9 @@ StrategySource = Literal["flowseal", "custom"]
 CloseAction = Literal["exit", "minimize_tray"]
 
 
+RETIRED_HOSTS_PROFILE = "zapret_dns"
+
+
 @dataclass
 class AppSettings:
     active_version: str | None = None
@@ -51,7 +54,7 @@ class AppSettings:
     )
     # hosts editor: catalog service id -> DNS profile id ("hosts" for direct entries)
     hosts_services: dict[str, str] = field(default_factory=dict)
-    hosts_profile: str = "zapret_dns"
+    hosts_profile: str = "comss_dns"
     # Add domains/IPs to the user's exclude lists when a server rejects a desynced TLS handshake.
     tls_auto_exclude: bool = True
     # Shows DNS, hosts and the strategy source; off on a fresh install.
@@ -75,6 +78,14 @@ class AppSettings:
         # Settings written before advanced_mode existed belong to people used to
         # the full interface; only a fresh install starts in the simple one.
         data.setdefault("advanced_mode", True)
+        # Zapret DNS is gone from Tigo: services chosen with it move to the default profile.
+        if data.get("hosts_profile") == RETIRED_HOSTS_PROFILE:
+            data["hosts_profile"] = cls.hosts_profile
+        if isinstance(data.get("hosts_services"), dict):
+            data["hosts_services"] = {
+                service: cls.hosts_profile if profile == RETIRED_HOSTS_PROFILE else profile
+                for service, profile in data["hosts_services"].items()
+            }
         known = {f.name for f in fields(cls)}
         filtered = {k: v for k, v in data.items() if k in known}
         return cls(**filtered)

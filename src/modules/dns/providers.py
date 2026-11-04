@@ -5,14 +5,6 @@
 
 DNS_PROVIDERS = {
     "Обход блокировок": {
-        "Zapret DNS": {
-            "ipv4": ["83.217.211.149"],
-            "ipv6": ["2a03:afc0:9::235d"],
-            "desc": "Доступ к заблокированным сервисам",
-            "icon": "fa5s.globe",
-            "color": "#1f6fd6",
-            "doh": "https://dns.zapret.moe/dns-query"
-        },
         "Comss DNS": {
             "ipv4": ["83.220.169.155", "212.109.195.93"],
             "ipv6": [],
@@ -38,6 +30,14 @@ DNS_PROVIDERS = {
             "icon": "fa5b.google",
             "color": "#4285f4",
             "doh": "https://dns.google/dns-query"
+        },
+        "Quad9": {
+            "ipv4": ["9.9.9.9", "149.112.112.112"],
+            "ipv6": ["2620:fe::fe", "2620:fe::9"],
+            "desc": "С защитой от вредоносных сайтов",
+            "icon": "fa5s.shield-alt",
+            "color": "#d6006c",
+            "doh": "https://dns.quad9.net/dns-query"
         },
     },
 }

@@ -107,6 +107,7 @@ class TigoDaemon:
             run_startup_updates(
                 on_message=lambda msg, error=False: warn("updates", msg) if error else info("updates", msg)
             )
+            threading.Thread(target=self._clean_retired_dns, daemon=True, name="tigo-dns-cleanup").start()
             if get_settings().auto_check_updates_on_startup:
                 threading.Thread(
                     target=self._refresh_hosts_catalog, daemon=True, name="tigo-hosts-catalog"
@@ -122,6 +123,15 @@ class TigoDaemon:
             runtime_state.mark_failed(f"Инициализация daemon завершилась ошибкой: {exc}")
         finally:
             self._bootstrap_done.set()
+
+    @staticmethod
+    def _clean_retired_dns() -> None:
+        from src.modules.dns.cleanup import clean_retired_dns
+
+        try:
+            clean_retired_dns()
+        except Exception as exc:  # noqa: BLE001 - must not take the daemon's startup with it
+            warn("dns", f"не удалось убрать прежний DNS: {exc}")
 
     @staticmethod
     def _refresh_hosts_catalog() -> None:
