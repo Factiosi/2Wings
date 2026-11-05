@@ -1,4 +1,4 @@
-"""Tigo entry point."""
+"""2Wings entry point."""
 
 from __future__ import annotations
 
@@ -11,11 +11,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-def _require_dependencies(*, include_flet: bool = True) -> None:
+def _require_dependencies(*, include_ui: bool = True) -> None:
     try:
         import httpx  # noqa: F401
-        if include_flet:
-            import flet as ft  # noqa: F401
+        if include_ui:
+            import PySide6  # noqa: F401
+            import qfluentwidgets  # noqa: F401
     except ModuleNotFoundError as exc:
         missing = exc.name or "unknown"
         print(
@@ -30,12 +31,6 @@ def _require_dependencies(*, include_flet: bool = True) -> None:
         raise SystemExit(1) from exc
 
 
-def _configure_flet_desktop() -> None:
-    from src.core.paths import configure_frozen_flet_desktop
-
-    configure_frozen_flet_desktop()
-
-
 def _is_daemon_mode(argv: list[str]) -> bool:
     return "--daemon" in argv
 
@@ -45,13 +40,13 @@ def _is_debug_console_mode(argv: list[str]) -> bool:
 
 
 def _is_post_update_relaunch(argv: list[str]) -> bool:
-    if os.environ.get("TIGORELAUNCH", "").strip() == "1":
+    if os.environ.get("TWOWINGSRELAUNCH", "").strip() == "1":
         return True
     return any(
         part.strip().endswith("=1")
         for arg in argv
         for part in arg.split(":", 1)[-1].split("&")
-        if "TIGORELAUNCH" in part.upper()
+        if "TWOWINGSRELAUNCH" in part.upper()
     )
 
 
@@ -65,24 +60,21 @@ def _signal_update_splash_done() -> None:
 
 
 def main() -> None:
-    from src.core.paths import verify_frozen_layout
+    from src.core.paths import migrate_legacy_app_data, verify_frozen_layout
 
+    migrate_legacy_app_data()
     verify_frozen_layout()
     argv = sys.argv
     if _is_post_update_relaunch(argv):
         _signal_update_splash_done()
     if _is_debug_console_mode(argv):
-        _require_dependencies(include_flet=True)
-        import flet as ft
-
-        _configure_flet_desktop()
+        _require_dependencies()
         from src.ui.features.debug_console.app import main as debug_console_main
 
-        ft.run(debug_console_main, view=ft.AppView.FLET_APP_HIDDEN)
-        return
+        sys.exit(debug_console_main())
 
     if _is_daemon_mode(argv):
-        _require_dependencies(include_flet=False)
+        _require_dependencies(include_ui=False)
         try:
             import pystray  # noqa: F401
             from PIL import Image  # noqa: F401
@@ -98,7 +90,7 @@ def main() -> None:
         from src.core.debug_log import info as log_info
         from src.core.process_label import set_process_description
 
-        set_process_description("Tigo daemon")
+        set_process_description("2Wings daemon")
         log_info("bootstrap", f"starting {APP_NAME} daemon")
         if not is_admin():
             if not ensure_admin():
@@ -116,16 +108,15 @@ def main() -> None:
             release_daemon_mutex()
         return
 
-    _require_dependencies(include_flet=True)
-    import flet as ft
+    _require_dependencies()
 
     from src.core.admin import ensure_admin, is_admin
     from src.core.debug_log import info as log_info
-    from src.core.paths import APP_NAME, ensure_layout, program_root
+    from src.core.paths import APP_NAME, ensure_layout
+    from src.core.process_label import set_process_description
     from src.core.settings import get_settings
     from src.daemon.ipc import register_gui_with_daemon
     from src.modules.lifecycle.public import require_daemon_for_gui, should_launch_gui
-    from src.ui.app import main as ui_main
 
     log_info("bootstrap", f"starting {APP_NAME} GUI")
     get_settings()
@@ -149,13 +140,11 @@ def main() -> None:
     from src.modules.strategy_testing.results import load_cache
 
     load_cache()
-    _configure_flet_desktop()
+    set_process_description(APP_NAME)
     log_info("bootstrap", "launching UI")
-    ft.run(
-        ui_main,
-        view=ft.AppView.FLET_APP_HIDDEN,
-        assets_dir=str(program_root()),
-    )
+    from src.ui.app import main as ui_main
+
+    sys.exit(ui_main())
 
 
 if __name__ == "__main__":

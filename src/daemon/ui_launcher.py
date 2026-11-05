@@ -1,10 +1,11 @@
-"""Spawn Tigo GUI process and track instances for shutdown."""
+"""Spawn 2Wings GUI process and track instances for shutdown."""
 
 from __future__ import annotations
 
 import os
 import subprocess
 import sys
+import time
 
 from src.core.debug_log import debug
 from src.core.paths import (
@@ -17,6 +18,9 @@ from src.core.paths import (
 
 _gui_pids: set[int] = set()
 _gui_processes: list[subprocess.Popen] = []
+_last_gui_spawn = 0.0
+# A new window takes a moment to appear; repeated clicks must not start more of them.
+_SPAWN_GRACE_SECONDS = 4.0
 
 
 def register_gui_pid(pid: int | None = None) -> None:
@@ -66,18 +70,21 @@ def close_all_gui() -> None:
     debug("daemon", "all GUI processes closed")
 
 
-def _spawn_args(*extra: str) -> tuple[list[str], dict]:
+def _spawn_args(*extra: str, hide_first_window: bool = True) -> tuple[list[str], dict]:
     root = program_root()
     cwd = str(root)
     kwargs: dict = {"cwd": cwd}
     if sys.platform == "win32":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
+        if hide_first_window:
+            # Windows applies this to the first window the process shows, so it is
+            # only for processes without a window of their own.
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs["startupinfo"] = startupinfo
         # CREATE_NO_WINDOW вместе с DETACHED_PROCESS Windows игнорирует, и python.exe
         # получает отдельное чёрное окно консоли.
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
-        kwargs["startupinfo"] = startupinfo
         kwargs["stdin"] = subprocess.DEVNULL
         kwargs["stdout"] = subprocess.DEVNULL
         kwargs["stderr"] = subprocess.DEVNULL
@@ -90,19 +97,35 @@ def _spawn_args(*extra: str) -> tuple[list[str], dict]:
     run_py = root / "run.py"
     if not run_py.is_file():
         raise FileNotFoundError(
-            f"Не найден Tigo.exe или run.py в {root}. "
-            "Запускайте приложение из полной папки dist\\Tigo\\."
+            f"Не найден 2Wings.exe или run.py в {root}. "
+            "Запускайте приложение из полной папки dist\\2Wings\\."
         )
     return [windowless_python_executable(), str(run_py), *extra], kwargs
 
 
+def _raise_existing_gui() -> bool:
+    _prune_gui_processes()
+    pids = set(_gui_pids) | {proc.pid for proc in _gui_processes}
+    if not pids or sys.platform != "win32":
+        return False
+    from src.core.win32_window import raise_window_of_processes
+
+    return raise_window_of_processes(pids)
+
+
 def launch_gui(*, hidden: bool = False) -> tuple[bool, str]:
+    global _last_gui_spawn
     args = ["--ui"]
     if hidden:
         args.append("--tray")
+    elif _raise_existing_gui():
+        return True, "Окно открыто."
+    elif time.monotonic() - _last_gui_spawn < _SPAWN_GRACE_SECONDS:
+        return True, "Окно открывается."
     try:
-        cmd, kwargs = _spawn_args(*args)
+        cmd, kwargs = _spawn_args(*args, hide_first_window=False)
         proc = subprocess.Popen(cmd, **kwargs)
+        _last_gui_spawn = time.monotonic()
     except OSError as exc:
         return False, str(exc)
     except FileNotFoundError as exc:

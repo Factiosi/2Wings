@@ -108,7 +108,7 @@ class WindowLaunchTests(unittest.TestCase):
             patch("src.modules.lifecycle.public.is_runtime_available", return_value=True),
             patch("src.core.settings.get_settings", return_value=settings),
         ):
-            self.assertFalse(should_launch_gui(["Tigo.exe"]))
+            self.assertFalse(should_launch_gui(["2Wings.exe"]))
 
 
 class RuntimeBootstrapTests(unittest.TestCase):
@@ -158,6 +158,39 @@ class RuntimeBootstrapTests(unittest.TestCase):
             result = ensure_runtime_installed(allow_update=True)
         self.assertTrue(result.ok)
         self.assertIn("locked", result.message)
+
+
+
+class TigoUpgradeTests(unittest.TestCase):
+    """What the updater of version 1.5.8 relies on when it installs this version."""
+
+    def setUp(self) -> None:
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        self.installer = (root / "tools" / "twowings_installer.iss").read_text(encoding="utf-8")
+        self.release = (root / "scripts" / "deploy_release.ps1").read_text(encoding="utf-8")
+
+    def test_installer_keeps_the_app_id_of_tigo(self) -> None:
+        self.assertIn("CB93C415-8593-4898-99D8-D1B69E7C8C38", self.installer)
+
+    def test_installer_does_not_kill_the_update_that_runs_it(self) -> None:
+        self.assertIn("/F /IM Tigo.exe", self.installer)
+        self.assertNotIn("/T /IM", self.installer)
+
+    def test_installer_accepts_the_switches_of_the_old_updater(self) -> None:
+        self.assertIn("'TIGOPROGRESS'", self.installer)
+        self.assertIn("'TIGORELAUNCH'", self.installer)
+
+    def test_release_carries_the_name_the_old_updater_looks_for(self) -> None:
+        self.assertIn('"Tigo-Setup-$Version.exe"', self.release)
+        self.assertIn("$LegacyInstaller, $LegacyChecksum", self.release)
+
+    def test_new_updater_finds_its_own_installer(self) -> None:
+        from src.modules.updates.app import _ASSET_RE
+
+        self.assertTrue(_ASSET_RE.fullmatch("2Wings-Setup-2.1.0.exe"))
+        self.assertFalse(_ASSET_RE.fullmatch("Tigo-Setup-2.1.0.exe"))
 
 
 if __name__ == "__main__":

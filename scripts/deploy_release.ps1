@@ -11,11 +11,11 @@ $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent $PSScriptRoot
 $Py = Join-Path $Repo ".venv\Scripts\python.exe"
 $BuildScript = Join-Path $PSScriptRoot "build_nuitka.ps1"
-$InstallerScript = Join-Path $Repo "tools\tigo_installer.iss"
+$InstallerScript = Join-Path $Repo "tools\twowings_installer.iss"
 $Dist = Join-Path $Repo "dist"
-$Standalone = Join-Path $Dist "Tigo"
+$Standalone = Join-Path $Dist "2Wings"
 $InstallerDir = Join-Path $Dist "installer"
-$Installer = Join-Path $InstallerDir "Tigo-Setup-$Version.exe"
+$Installer = Join-Path $InstallerDir "2Wings-Setup-$Version.exe"
 $Checksum = "$Installer.sha256"
 $Tag = "v$Version"
 $Iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
@@ -63,21 +63,20 @@ if ($Publish) {
 Write-Host "Running tests..."
 Invoke-Checked $Py @("-m", "unittest", "discover", "-s", "tests", "-v")
 
-Remove-Item Env:TIGO_AUTOMATION -ErrorAction SilentlyContinue
-$ReleaseProcesses = Get-CimInstance Win32_Process -Filter "Name = 'Tigo.exe'" |
+Remove-Item Env:TWOWINGS_AUTOMATION -ErrorAction SilentlyContinue
+$ReleaseProcesses = Get-CimInstance Win32_Process -Filter "Name = '2Wings.exe'" |
     Where-Object { $_.ExecutablePath -like "$Standalone*" }
-Assert-True (-not $ReleaseProcesses) "A Tigo process from dist is running. Close it before release build."
+Assert-True (-not $ReleaseProcesses) "A 2Wings process from dist is running. Close it before release build."
 
 Write-Host "Building standalone..."
 Invoke-Checked "powershell" @("-ExecutionPolicy", "Bypass", "-File", $BuildScript)
 
 $Required = @(
-    (Join-Path $Standalone "Tigo.exe"),
-    (Join-Path $Standalone "updater\TigoUpdate.exe"),
-    (Join-Path $Standalone "flet_client\flet.exe"),
+    (Join-Path $Standalone "2Wings.exe"),
+    (Join-Path $Standalone "updater\TwoWingsUpdate.exe"),
     (Join-Path $Standalone "assets\icons\app.ico"),
     (Join-Path $Standalone "assets\hosts\hosts_catalog.sqlite3"),
-    (Join-Path $Standalone "assets\lua\tigo-tls-watch.lua")
+    (Join-Path $Standalone "assets\lua\twowings-tls-watch.lua")
 )
 foreach ($Path in $Required) {
     Assert-True (Test-Path $Path) "Required release file is missing: $Path"
@@ -101,9 +100,17 @@ $Hash = (Get-FileHash $Installer -Algorithm SHA256).Hash.ToLowerInvariant()
 "$Hash  $(Split-Path $Installer -Leaf)" | Set-Content $Checksum -Encoding ascii
 Assert-True (Test-Path $Checksum) "Checksum file was not created."
 
+# Versions up to 1.5.8 look for this name in the latest release. Without it they report
+# "up to date" for ever, so it goes into every release.
+$LegacyInstaller = Join-Path $InstallerDir "Tigo-Setup-$Version.exe"
+$LegacyChecksum = "$LegacyInstaller.sha256"
+Copy-Item $Installer $LegacyInstaller
+"$Hash  $(Split-Path $LegacyInstaller -Leaf)" | Set-Content $LegacyChecksum -Encoding ascii
+
 Write-Host "Release artifact verified:"
 Write-Host "  $Installer"
 Write-Host "  $Checksum"
+Write-Host "  $LegacyInstaller (for updaters up to 1.5.8)"
 
 if ($DryRun -or -not $Publish) {
     Write-Host "Dry run complete. Git and GitHub were not changed."
@@ -113,14 +120,14 @@ if ($DryRun -or -not $Publish) {
 Write-Host "Publishing $Tag..."
 Invoke-Checked "git" @("push", "origin", "master")
 Invoke-Checked "gh" @(
-    "repo", "edit", "Factiosi/Tigo",
+    "repo", "edit", "Factiosi/2Wings",
     "--visibility", "public",
     "--accept-visibility-change-consequences"
 )
-Invoke-Checked "git" @("tag", "-a", $Tag, "-m", "Tigo $Version")
+Invoke-Checked "git" @("tag", "-a", $Tag, "-m", "2Wings $Version")
 Invoke-Checked "git" @("push", "origin", $Tag)
 
-$NotesFile = Join-Path $env:TEMP "tigo-release-$Version.md"
+$NotesFile = Join-Path $env:TEMP "twowings-release-$Version.md"
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 [System.IO.File]::WriteAllText(
     $NotesFile,
@@ -130,9 +137,9 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 try {
     Invoke-Checked "gh" @(
         "release", "create", $Tag,
-        $Installer, $Checksum,
-        "--repo", "Factiosi/Tigo",
-        "--title", "Tigo $Version",
+        $Installer, $Checksum, $LegacyInstaller, $LegacyChecksum,
+        "--repo", "Factiosi/2Wings",
+        "--title", "2Wings $Version",
         "--notes-file", $NotesFile,
         "--verify-tag"
     )
@@ -141,4 +148,4 @@ finally {
     Remove-Item $NotesFile -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "Published: https://github.com/Factiosi/Tigo/releases/tag/$Tag"
+Write-Host "Published: https://github.com/Factiosi/2Wings/releases/tag/$Tag"

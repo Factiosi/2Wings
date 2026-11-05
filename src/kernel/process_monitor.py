@@ -27,7 +27,7 @@ class ProcessMonitor:
         if self._thread and self._thread.is_alive():
             return
         self._running = True
-        self._thread = threading.Thread(target=self._loop, daemon=True, name="tigo-process-monitor")
+        self._thread = threading.Thread(target=self._loop, daemon=True, name="twowings-process-monitor")
         self._thread.start()
 
     def stop(self) -> None:

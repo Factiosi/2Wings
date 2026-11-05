@@ -1,52 +1,22 @@
-"""Probe results table — compact UI rows (not selectable text)."""
+"""Probe results table for one strategy."""
 
 from __future__ import annotations
 
 import re
 from typing import Literal
 
-import flet as ft
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
+from qfluentwidgets import CaptionLabel
 
 from src.modules.strategy_testing import results as tr
-from src.ui.theme import T, argb
-from src.ui.components import ui_text
-
-NAME_WIDTH = 148
-HTTP_WIDTH = 64
-TLS_WIDTH = 72
-PING_WIDTH = 72
-PROBE_FONT_SIZE = 12
+from src.ui.components import COLOR_ERROR, COLOR_MUTED, COLOR_SUCCESS, COLOR_WARNING, clear_layout, spinner
 
 CellKey = tuple[str, str]
 MetricField = Literal["http", "tls12", "tls13"]
-_METRIC_FIELDS: tuple[tuple[MetricField, str, int], ...] = (
-    ("http", "HTTP", HTTP_WIDTH),
-    ("tls12", "TLS1.2", TLS_WIDTH),
-    ("tls13", "TLS1.3", TLS_WIDTH),
-)
-
-
-def factiosi_spinner(*, size: int = 16) -> ft.Container:
-    """Квадрат с жёсткими пределами. Иначе кольцо тянется по ширине ячейки и становится овалом."""
-    return ft.Container(
-        width=size,
-        height=size,
-        alignment=ft.Alignment.CENTER,
-        content=ft.ProgressRing(
-            stroke_width=2,
-            padding=0,
-            track_gap=0,
-            year_2023=True,
-            size_constraints=ft.BoxConstraints(
-                min_width=size,
-                max_width=size,
-                min_height=size,
-                max_height=size,
-            ),
-            color=T.BUTTON,
-            bgcolor=argb(T.BUTTON, 0x4D),
-        ),
-    )
+_METRIC_FIELDS: tuple[MetricField, ...] = ("http", "tls12", "tls13")
+_CAPTIONS = ("Адрес", "HTTP", "TLS 1.2", "TLS 1.3", "Ping")
+_COLOR_TEXT = ("#1a1a1a", "#ffffff")
 
 
 def _metric_value(raw: str) -> str:
@@ -55,240 +25,153 @@ def _metric_value(raw: str) -> str:
     return raw
 
 
-def _token_color(raw: str) -> str:
+def _token_color(raw: str) -> tuple[str, str]:
     value = _metric_value(raw).strip()
     upper = value.upper()
     if upper == "OK":
-        return T.STATUS_ACTIVE
+        return COLOR_SUCCESS
     if upper in {"?", ""}:
-        return T.TEXT_FAINT
+        return COLOR_MUTED
     if upper in {"ERROR", "ERR"}:
-        return T.STATUS_ERROR
+        return COLOR_ERROR
     if "UNSUP" in upper:
-        return T.STATUS_EXPIRING
+        return COLOR_WARNING
     if any(x in upper for x in ("SSL", "FAIL", "TIMEOUT")):
-        return T.STATUS_ERROR
+        return COLOR_ERROR
     if value.lower() in {"timeout", "n/a"}:
-        return T.STATUS_EXPIRING
-    return T.TEXT
+        return COLOR_WARNING
+    return _COLOR_TEXT
 
 
 def _parse_ping_ms(text: str) -> int | None:
     match = re.search(r"(\d+)", text.replace(" ", ""))
-    if not match:
-        return None
-    try:
-        return int(match.group(1))
-    except ValueError:
-        return None
+    return int(match.group(1)) if match else None
 
 
-def _ping_value_color(text: str) -> str:
+def _ping_value_color(text: str) -> tuple[str, str]:
     upper = text.upper()
     if any(x in upper for x in ("ERROR", "FAIL", "TIMEOUT")) or upper.strip() in {"N/A", "?"}:
-        return T.STATUS_ERROR
+        return COLOR_ERROR
     ms = _parse_ping_ms(text)
     if ms is None:
-        return T.TEXT
+        return _COLOR_TEXT
     if ms >= 200:
-        return T.STATUS_ERROR
+        return COLOR_ERROR
     if ms > 100:
-        return T.STATUS_EXPIRING
-    return T.STATUS_ACTIVE
+        return COLOR_WARNING
+    return COLOR_SUCCESS
 
 
 def _short_token(raw: str) -> str:
     value = _metric_value(raw)
-    if value == "?":
-        return "?"
-    if value == "OK":
-        return "OK"
-    if value == "ERROR":
-        return "ERR"
-    if value == "UNSUP":
-        return "UNSUP"
-    if value == "SSL":
-        return "SSL"
-    return value
+    return "ERR" if value == "ERROR" else value
 
 
-def _value_text(value: str, *, value_color: str) -> ft.Control:
-    return ui_text(value, size=PROBE_FONT_SIZE, color=value_color, no_wrap=True, weight=ft.FontWeight.W_600)
-
-
-def _loading_content(spinner: ft.Control) -> ft.Control:
-    return spinner
-
-
-def _value_content(cell: tr.ProbeCell, *, ping: bool = False) -> ft.Control:
+def _cell_view(cell: tr.ProbeCell, *, ping: bool) -> tuple[str, tuple[str, str]]:
     if ping:
         if cell.phase == "pending" or cell.text in {"?", "? ms"}:
-            return _value_text("—", value_color=T.TEXT_FAINT)
-        ping_value = cell.text.replace(" ", "")
-        return _value_text(ping_value, value_color=_ping_value_color(cell.text))
-
+            return "—", COLOR_MUTED
+        return cell.text.replace(" ", ""), _ping_value_color(cell.text)
     if cell.phase == "pending" or cell.text == "?":
-        return _value_text("—", value_color=T.TEXT_FAINT)
-    value = _short_token(cell.text)
-    return _value_text(value, value_color=_token_color(cell.text))
+        return "—", COLOR_MUTED
+    return _short_token(cell.text), _token_color(cell.text)
 
 
-class ProbeTableView:
-    """Mutable probe table that reuses spinner controls between sync calls."""
+class _Cell(QWidget):
+    """A value label that turns into a ring while the probe is running."""
 
-    def __init__(self, strategy_id: str) -> None:
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self.label = CaptionLabel("—", self)
+        self._layout.addWidget(self.label)
+        self.ring = None
+
+    def show_value(self, text: str, color: tuple[str, str]) -> None:
+        if self.ring is not None:
+            self.ring.setParent(None)
+            self.ring.deleteLater()
+            self.ring = None
+        self.label.setVisible(True)
+        self.label.setText(text)
+        self.label.setTextColor(*color)
+
+    def show_ring(self):
+        if self.ring is None:
+            self.ring = spinner(14, self)
+            self._layout.addWidget(self.ring)
+            self.label.setVisible(False)
+        return self.ring
+
+
+class ProbeTableView(QWidget):
+    """Reuses cells and rings between syncs, so a ring is not restarted on every tick."""
+
+    def __init__(self, strategy_id: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
         self._strategy_id = strategy_id
-        self._table = ft.Column(spacing=0, tight=True)
-        self._root: ft.Control = self._table
-        self._row_by_name: dict[str, ft.Container] = {}
-        self._cell_containers: dict[CellKey, ft.Container] = {}
-        self._spinners: dict[CellKey, ft.Control] = {}
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(8)
+        self._detail = CaptionLabel(self)
+        self._detail.setWordWrap(True)
+        self._detail.setTextColor(*COLOR_ERROR)
+        self._detail.setVisible(False)
+        root.addWidget(self._detail)
+        self._grid = QGridLayout()
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setHorizontalSpacing(16)
+        self._grid.setVerticalSpacing(6)
+        self._grid.setColumnStretch(0, 1)
+        root.addLayout(self._grid)
+        self._cells: dict[CellKey, _Cell] = {}
+        self._spinners: dict[CellKey, QWidget] = {}
         self._row_order: list[str] = []
         self.sync(strategy_id)
-
-    @property
-    def control(self) -> ft.Control:
-        return self._root
 
     def sync(self, strategy_id: str | None = None) -> None:
         sid = strategy_id or self._strategy_id
         self._strategy_id = sid
         rows = tr.get_probe_table(sid) or tr.default_probe_table()
         item = tr.get_result(sid)
-        if item and item.detail.strip() and not tr.get_probe_table(sid):
-            self._root = ft.Column(
-                [
-                    ui_text(item.detail.strip(), size=PROBE_FONT_SIZE, color=T.STATUS_ERROR),
-                    self._table,
-                ],
-                spacing=8,
-                tight=True,
-            )
-        elif self._root is not self._table:
-            self._root = self._table
-
+        detail = item.detail.strip() if item and item.detail and not tr.get_probe_table(sid) else ""
+        self._detail.setText(detail)
+        self._detail.setVisible(bool(detail))
         names = [row.name for row in rows]
         if names != self._row_order:
-            self._rebuild_rows(rows)
-            return
+            self._rebuild(rows)
         for row in rows:
-            self._sync_row(row)
+            if row.http is not None:
+                for field in _METRIC_FIELDS:
+                    self._paint((row.name, field), getattr(row, field), ping=False)
+            self._paint((row.name, "ping"), row.ping, ping=True)
 
-    def _rebuild_rows(self, rows: list[tr.ProbeTableRow]) -> None:
-        self._table.controls.clear()
-        self._row_by_name.clear()
-        self._cell_containers.clear()
+    def _rebuild(self, rows: list[tr.ProbeTableRow]) -> None:
+        clear_layout(self._grid)
+        self._cells.clear()
         self._spinners.clear()
         self._row_order = [row.name for row in rows]
-        self._table.controls.append(self._header())
-        for row in rows:
-            row_container = self._build_row(row)
-            self._row_by_name[row.name] = row_container
-            self._table.controls.append(row_container)
+        for column, text in enumerate(_CAPTIONS):
+            head = CaptionLabel(text, self)
+            head.setTextColor(*COLOR_MUTED)
+            self._grid.addWidget(head, 0, column)
+        for index, row in enumerate(rows, start=1):
+            self._grid.addWidget(CaptionLabel(row.name, self), index, 0, Qt.AlignmentFlag.AlignVCenter)
+            if row.http is not None:
+                for column, field in enumerate(_METRIC_FIELDS, start=1):
+                    self._cells[(row.name, field)] = cell = _Cell(self)
+                    self._grid.addWidget(cell, index, column)
+            self._cells[(row.name, "ping")] = cell = _Cell(self)
+            self._grid.addWidget(cell, index, 4)
 
-    def _header(self) -> ft.Container:
-        captions = [("Адрес", NAME_WIDTH), ("HTTP", HTTP_WIDTH), ("TLS 1.2", TLS_WIDTH), ("TLS 1.3", TLS_WIDTH), ("Ping", PING_WIDTH)]
-        return ft.Container(
-            content=ft.Row(
-                [
-                    ft.Container(
-                        content=ui_text(caption, size=PROBE_FONT_SIZE, color=T.TEXT_MUTED, no_wrap=True),
-                        width=width,
-                    )
-                    for caption, width in captions
-                ],
-                spacing=8,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            padding=ft.Padding.only(left=8, right=8, bottom=4),
-        )
-
-    def _build_row(self, row: tr.ProbeTableRow) -> ft.Container:
-        cells: list[ft.Control] = [
-            ft.Container(
-                content=ui_text(row.name, size=PROBE_FONT_SIZE, color=T.TEXT, no_wrap=True),
-                width=NAME_WIDTH,
-            )
-        ]
-        if row.http is not None:
-            for field, label, width in _METRIC_FIELDS:
-                cell = getattr(row, field)
-                cells.append(self._ensure_cell((row.name, field), cell, label, width))
-        else:
-            for _field, _label, width in _METRIC_FIELDS:
-                cells.append(ft.Container(width=width))
-        cells.append(self._ensure_cell((row.name, "ping"), row.ping, "Ping", PING_WIDTH, ping=True))
-        return ft.Container(
-            content=ft.Row(
-                cells,
-                spacing=8,
-                tight=True,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            bgcolor=T.SUNKEN,
-            border_radius=4,
-            padding=ft.Padding.symmetric(horizontal=8, vertical=4),
-            margin=ft.Margin.only(bottom=4),
-        )
-
-    def _sync_row(self, row: tr.ProbeTableRow) -> None:
-        if row.http is not None:
-            for field, label, width in _METRIC_FIELDS:
-                cell = getattr(row, field)
-                self._sync_cell((row.name, field), cell, label, width)
-        self._sync_cell((row.name, "ping"), row.ping, "Ping", PING_WIDTH, ping=True)
-
-    def _ensure_cell(
-        self,
-        key: CellKey,
-        cell: tr.ProbeCell,
-        label: str,
-        width: int,
-        *,
-        ping: bool = False,
-    ) -> ft.Container:
-        if cell.phase == "loading":
-            spinner = factiosi_spinner(size=16)
-            self._spinners[key] = spinner
-            content: ft.Control = _loading_content(spinner)
-        else:
-            content = _value_content(cell, ping=ping)
-        container = ft.Container(
-            content=content,
-            width=width,
-            alignment=ft.Alignment.CENTER_LEFT,
-        )
-        self._cell_containers[key] = container
-        return container
-
-    def _sync_cell(
-        self,
-        key: CellKey,
-        cell: tr.ProbeCell,
-        label: str,
-        width: int,
-        *,
-        ping: bool = False,
-    ) -> None:
-        container = self._cell_containers.get(key)
-        if container is None:
-            row = self._row_by_name.get(key[0])
-            if row is None:
-                return
-            self._ensure_cell(key, cell, label, width, ping=ping)
+    def _paint(self, key: CellKey, value: tr.ProbeCell, *, ping: bool) -> None:
+        cell = self._cells.get(key)
+        if cell is None:
             return
-
-        if cell.phase == "loading":
-            if key in self._spinners:
-                return
-            spinner = factiosi_spinner(size=16)
-            self._spinners[key] = spinner
-            container.content = _loading_content(spinner)
+        if value.phase == "loading":
+            self._spinners[key] = cell.show_ring()
             return
-
         self._spinners.pop(key, None)
-        container.content = _value_content(cell, ping=ping)
-
-
-def build_probe_table(strategy_id: str) -> ft.Control:
-    return ProbeTableView(strategy_id).control
+        text, color = _cell_view(value, ping=ping)
+        cell.show_value(text, color)

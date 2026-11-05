@@ -20,7 +20,7 @@ def _launch_command() -> list[str]:
 
 
 def open_debug_console() -> tuple[bool, str]:
-    """Spawn a standalone Flet window. Returns (ok, message)."""
+    """Spawn the console window. Returns (ok, message)."""
     global _process
 
     if _process is not None and _process.poll() is not None:

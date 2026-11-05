@@ -1,4 +1,4 @@
-"""Transform downloaded Flowseal package into the Tigo layout."""
+"""Transform downloaded Flowseal package into the 2Wings layout."""
 
 from __future__ import annotations
 
@@ -7,10 +7,8 @@ from pathlib import Path
 
 from src.core.paths import (
     USER_LIST_FILES,
-    VERSIONED_LIST_FILES,
     _merge_copytree,
     flowseal_fake_bin_dir,
-    flowseal_user_lists_dir,
     flowseal_version_dir,
     flowseal_version_lists_dir,
     program_root,

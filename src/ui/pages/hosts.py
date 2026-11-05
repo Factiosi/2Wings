@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import threading
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from qfluentwidgets import CheckBox, PrimaryPushButton, PushButton, SearchLineEdit, StrongBodyLabel
 
-import flet as ft
-
+from src.core.paths import APP_NAME
 from src.core.settings import get_settings, save_settings
 from src.modules.hosts.catalog import (
     CATEGORY_TITLES,
@@ -28,27 +28,25 @@ from src.modules.hosts.service import (
     service_block_id,
     set_preset,
 )
-from src.ui.components import (
-    block_section,
-    make_select,
-    make_text_field,
-    pill_button,
-    quiet_checkbox,
-    scroll_page,
-    status_pill,
-    ui_text,
-)
+from src.ui.components import Lucide, Group, OptionCard, Page, Panel, caption, clear_layout, row, select_card, status_badge
+from src.ui.dispatch import run_bg
 from src.ui.notifications import show_toast
-from src.ui.theme import T
 
 _CATEGORY_ORDER = ("ai", "other", "direct")
+SERVICES_HINT = (
+    "Отмеченные сервисы получают в hosts адреса прокси выбранного DNS. Comss и XBOX "
+    f"{APP_NAME} спрашивает вживую при «Применить», остальные берёт из каталога; неотвечающие адреса "
+    "не записываются. Домены, которые DNS не проксирует, остаются обычному DNS. "
+    "«Прямые записи» — готовые адреса."
+)
 
 
-class HostsPage:
-    def __init__(self, page: ft.Page) -> None:
-        self.page = page
+class HostsPage(Page):
+    title = "Редактирование hosts"
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
         self._busy = False
-        self._root = ft.Container()
         settings = get_settings()
         self._selected: set[str] = set(settings.hosts_services)
         self._profile = settings.hosts_profile
@@ -56,14 +54,16 @@ class HostsPage:
         self._catalog: Catalog | None = None
         self._catalog_error = ""
         self._unavailable: set[str] = set()
-        self._service_rows: dict[str, ft.Control] = {}
-        self._checkboxes: dict[str, ft.Checkbox] = {}
-        self._group_headers: dict[str, ft.Control] = {}
-
-    def build(self) -> ft.Control:
+        self._service_rows: dict[str, QWidget] = {}
+        self._checkboxes: dict[str, CheckBox] = {}
+        self._group_headers: dict[str, QWidget] = {}
+        self._content = QWidget()
+        self._stack = QVBoxLayout(self._content)
+        self._stack.setContentsMargins(0, 0, 0, 0)
+        self._stack.setSpacing(24)
+        self.add(self._content)
         self._load_catalog()
         self._render(load_state())
-        return self._root
 
     def _load_catalog(self) -> None:
         try:
@@ -85,162 +85,119 @@ class HostsPage:
 
     # rendering -----------------------------------------------------------------
     def _render(self, state: HostsState) -> None:
-        preset_rows = [self._preset_row(preset, count) for preset, count in state.presets]
-        tigo_entries = sum(state.summary.blocks.values())
-        file_info = ui_text(
-            f"{hosts_path()} · записей: {state.summary.entries}, из них Tigo: {tigo_entries}",
-            color=T.TEXT_MUTED,
-            size=T.FONT_CAPTION,
-            selectable=True,
-        )
-        self._root.content = scroll_page(
-            block_section("Готовые наборы", *preset_rows),
-            self._services_section(state),
-            block_section(
-                "Файл hosts",
-                file_info,
-                ft.Row(
-                    [
-                        pill_button("Открыть в редакторе", on_click=self._open),
-                        pill_button("Обновить", on_click=lambda _: self._reload()),
-                        pill_button(
-                            "Вернуть копию до Tigo",
-                            on_click=self._restore_backup,
-                            disabled=not state.has_backup,
-                        ),
-                        pill_button("Стандартный hosts Windows", destructive=True, on_click=self._restore_default),
-                    ],
-                    spacing=8,
-                    wrap=True,
-                ),
-            ),
-            page=self.page,
-        )
+        scroll = self.verticalScrollBar().value()
+        clear_layout(self._stack)
+        presets = Group("Готовые наборы", *(self._preset_card(preset, count) for preset, count in state.presets))
+        own_entries = sum(state.summary.blocks.values())
+        info = caption(f"{hosts_path()} · записей: {state.summary.entries}, из них {APP_NAME}: {own_entries}")
+        open_btn = PushButton(Lucide("square-pen"), "Открыть в редакторе")
+        open_btn.clicked.connect(self._open)
+        reload_btn = PushButton(Lucide("refresh-cw"), "Обновить")
+        reload_btn.clicked.connect(self._reload)
+        backup_btn = PushButton(f"Вернуть копию до {APP_NAME}")
+        backup_btn.setEnabled(state.has_backup)
+        backup_btn.clicked.connect(lambda: self._run(restore_backup))
+        default_btn = PushButton("Стандартный hosts Windows")
+        default_btn.clicked.connect(lambda: self._run(restore_default))
+        self._stack.addWidget(presets)
+        self._stack.addWidget(self._services_section(state))
+        self._stack.addWidget(Group("Файл hosts", Panel(info, row(open_btn, reload_btn), row(backup_btn, default_btn))))
+        self.verticalScrollBar().setValue(scroll)
 
-    def _services_section(self, state: HostsState) -> ft.Control:
+    def _services_section(self, state: HostsState) -> QWidget:
         if self._catalog is None:
-            return block_section(
-                "Сервисы",
-                ui_text(f"Каталог сервисов недоступен: {self._catalog_error}", color=T.TEXT_MUTED, size=T.FONT_CAPTION),
-                pill_button("Скачать каталог", on_click=self._update_catalog),
-            )
+            download = PushButton("Скачать каталог")
+            download.clicked.connect(self._update_catalog)
+            return Group("Сервисы", Panel(caption(f"Каталог сервисов недоступен: {self._catalog_error}"), row(download)))
         written = {
             service.id
             for service in self._catalog.services
             if state.summary.blocks.get(service_block_id(service.id), 0) > 0
         }
-        profile_select = make_select(
-            self.page,
+        profile_card = select_card(
             "Через какой DNS открывать сервисы",
             list(self._catalog.profiles),
             self._profile,
-            on_change=self._on_profile_change,
+            self._on_profile_change,
+            icon=Lucide("globe"),
         )
-        search = make_text_field("Поиск", self._query, on_change=self._on_search)
+        search = SearchLineEdit()
+        search.setPlaceholderText("Поиск")
+        search.setText(self._query)
+        search.textChanged.connect(self._on_search)
         self._service_rows = {}
         self._checkboxes = {}
         self._group_headers = {}
-        groups: list[ft.Control] = []
+        services_panel = Panel(search, spacing=4)
         for category in _CATEGORY_ORDER:
             services = [service for service in self._catalog.services if service.category == category]
             if not services:
                 continue
-            header = ui_text(
-                CATEGORY_TITLES.get(category, category),
-                size=T.FONT_LABEL,
-                color=T.TEXT_MUTED,
-                weight=ft.FontWeight.W_500,
-            )
+            header = StrongBodyLabel(CATEGORY_TITLES.get(category, category))
+            header.setContentsMargins(0, 12, 0, 4)
             self._group_headers[category] = header
-            groups.append(header)
+            services_panel.add(header)
             for service in services:
-                row = self._service_row(service, written=service.id in written)
-                self._service_rows[service.id] = row
-                groups.append(row)
+                widget = self._service_row(service, written=service.id in written)
+                self._service_rows[service.id] = widget
+                services_panel.add(widget)
         self._apply_filter()
-        hint = (
-            "Отмеченные сервисы получают в hosts адреса прокси выбранного DNS. Comss и XBOX "
-            "Tigo спрашивает вживую при «Применить», остальные берёт из каталога; неотвечающие адреса "
-            "не записываются. Домены, которые DNS не проксирует, остаются обычному DNS. "
-            "«Прямые записи» — готовые адреса."
-        )
-        return block_section(
+        apply_btn = PrimaryPushButton("Применить")
+        apply_btn.clicked.connect(self._apply_services)
+        all_btn = PushButton("Выделить всё")
+        all_btn.clicked.connect(lambda: self._check_visible(True))
+        none_btn = PushButton("Снять всё")
+        none_btn.clicked.connect(lambda: self._check_visible(False))
+        update_btn = PushButton("Обновить каталог")
+        update_btn.clicked.connect(self._update_catalog)
+        return Group(
             "Сервисы",
-            ui_text(hint, color=T.TEXT_MUTED, size=T.FONT_CAPTION),
-            ft.Row([ft.Container(profile_select, expand=True), ft.Container(search, expand=True)], spacing=12),
-            ft.Column(groups, spacing=2, tight=True),
-            ft.Row(
-                [
-                    pill_button("Применить", primary=True, on_click=self._apply_services),
-                    pill_button("Выделить всё", on_click=lambda _: self._check_visible(True)),
-                    pill_button("Снять всё", on_click=lambda _: self._check_visible(False)),
-                    pill_button("Обновить каталог", on_click=self._update_catalog),
-                    ui_text(f"Каталог {self._catalog.version}", color=T.TEXT_MUTED, size=T.FONT_CAPTION),
-                ],
-                spacing=8,
-                wrap=True,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
+            caption(SERVICES_HINT),
+            profile_card,
+            services_panel,
+            Panel(row(apply_btn, all_btn, none_btn, update_btn, caption(f"Каталог {self._catalog.version}"))),
         )
 
-    def _service_row(self, service, *, written: bool) -> ft.Control:
+    def _service_row(self, service, *, written: bool) -> QWidget:
         unavailable = service.id in self._unavailable
         label = f"{service.name} · {service.domains} {'записей' if service.kind != 'dns' else 'доменов'}"
         if unavailable:
             label += " · нужен IPv6"
-        checkbox = quiet_checkbox(
-            value=service.id in self._selected,
-            disabled=unavailable,
-            on_change=lambda e, sid=service.id: self._on_toggle(sid, bool(e.control.value)),
-        )
+        checkbox = CheckBox(label)
+        checkbox.setChecked(service.id in self._selected)
+        checkbox.setEnabled(not unavailable)
+        checkbox.toggled.connect(lambda checked, sid=service.id: self._on_toggle(sid, checked))
         self._checkboxes[service.id] = checkbox
-        trailing: list[ft.Control] = [status_pill("active", "В hosts", dense=True)] if written else []
-        return ft.Row(
-            [checkbox, ui_text(label, expand=True, color=T.TEXT_MUTED if unavailable else T.TEXT), *trailing],
-            spacing=8,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        )
+        holder = QWidget()
+        line = QHBoxLayout(holder)
+        line.setContentsMargins(0, 6, 0, 6)
+        line.addWidget(checkbox, 1)
+        if written:
+            line.addWidget(status_badge("active", "В hosts"))
+        return holder
 
-    def _preset_row(self, preset, count: int) -> ft.Control:
+    def _preset_card(self, preset, count: int) -> OptionCard:
         enabled = count > 0
-        badge = status_pill("active", f"Включено · {count}") if enabled else status_pill("offline", "Выключено")
-        return ft.Row(
-            [
-                ft.Column(
-                    [
-                        ui_text(preset.title, weight=ft.FontWeight.W_500),
-                        ui_text(preset.description, color=T.TEXT_MUTED, size=T.FONT_CAPTION),
-                    ],
-                    spacing=2,
-                    tight=True,
-                    expand=True,
-                ),
-                badge,
-                pill_button(
-                    "Выключить" if enabled else "Включить",
-                    primary=not enabled,
-                    on_click=lambda _, pid=preset.id, on=not enabled: self._run(lambda: set_preset(pid, on)),
-                ),
-            ],
-            spacing=12,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        )
+        badge = status_badge("active", f"Включено · {count}") if enabled else status_badge("offline", "Выключено")
+        button = (PushButton if enabled else PrimaryPushButton)("Выключить" if enabled else "Включить")
+        button.clicked.connect(lambda: self._run(lambda: set_preset(preset.id, not enabled)))
+        return OptionCard(preset.title, preset.description, badge, button)
 
     def _apply_filter(self) -> None:
         query = self._query.strip().lower()
         visible_by_category: dict[str, bool] = {}
         for service in self._catalog.services if self._catalog else ():
-            row = self._service_rows.get(service.id)
-            if row is None:
+            widget = self._service_rows.get(service.id)
+            if widget is None:
                 continue
-            row.visible = not query or query in service.name.lower()
-            visible_by_category[service.category] = visible_by_category.get(service.category, False) or row.visible
+            shown = not query or query in service.name.lower()
+            widget.setVisible(shown)
+            visible_by_category[service.category] = visible_by_category.get(service.category, False) or shown
         for category, header in self._group_headers.items():
-            header.visible = visible_by_category.get(category, False)
+            header.setVisible(visible_by_category.get(category, False))
 
     def _reload(self) -> None:
         self._render(load_state())
-        self.page.update()
 
     # events --------------------------------------------------------------------
     def _on_toggle(self, service_id: str, checked: bool) -> None:
@@ -255,10 +212,9 @@ class HostsPage:
         settings.hosts_profile = self._profile
         save_settings(settings)
 
-    def _on_search(self, e: ft.ControlEvent) -> None:
-        self._query = str(e.control.value or "")
+    def _on_search(self, text: str) -> None:
+        self._query = text
         self._apply_filter()
-        self.page.update()
 
     def _selection(self) -> dict[str, str]:
         catalog = self._catalog
@@ -272,22 +228,19 @@ class HostsPage:
             result[service_id] = self._profile if service.kind == "dns" else DIRECT_PROFILE
         return result
 
-    def _apply_services(self, _: ft.ControlEvent) -> None:
+    def _apply_services(self) -> None:
         selection = self._selection()
         if selection and not self._busy:
-            show_toast(self.page, "Спрашиваю адреса у DNS и проверяю прокси…", kind="info")
+            show_toast("Спрашиваю адреса у DNS и проверяю прокси…")
         self._run(lambda: apply_services(selection))
 
     def _check_visible(self, checked: bool) -> None:
         """Tick or untick every service the search shows; hosts changes on «Применить»."""
         for service_id, checkbox in self._checkboxes.items():
-            if checkbox.disabled or not self._service_rows[service_id].visible:
-                continue
-            checkbox.value = checked
-            self._on_toggle(service_id, checked)
-        self.page.update()
+            if checkbox.isEnabled() and not self._service_rows[service_id].isHidden():
+                checkbox.setChecked(checked)
 
-    def _update_catalog(self, _: ft.ControlEvent) -> None:
+    def _update_catalog(self) -> None:
         def work():
             ok, message = refresh_catalog_and_services(force=True)
             self._load_catalog()
@@ -301,31 +254,16 @@ class HostsPage:
             return
         self._busy = True
 
-        def runner() -> None:
-            try:
-                ok, message = work()
-            except Exception as exc:  # noqa: BLE001
-                ok, message = False, str(exc)
+        def done(result) -> None:
+            ok, message = result
+            self._busy = False
+            if ok:
+                self._selected = set(get_settings().hosts_services)
+            self._reload()
+            show_toast(message, kind="success" if ok else "error")
 
-            def finish() -> None:
-                self._busy = False
-                self._selected = set(get_settings().hosts_services) if ok else self._selected
-                self._reload()
-                show_toast(self.page, message, kind="success" if ok else "error")
+        run_bg(work, done, name="twowings-hosts")
 
-            try:
-                self.page.run_thread(finish)
-            except AttributeError:
-                finish()
-
-        threading.Thread(target=runner, daemon=True).start()
-
-    def _open(self, _: ft.ControlEvent) -> None:
+    def _open(self) -> None:
         ok, message = open_in_editor()
-        show_toast(self.page, message, kind="success" if ok else "error")
-
-    def _restore_backup(self, _: ft.ControlEvent) -> None:
-        self._run(restore_backup)
-
-    def _restore_default(self, _: ft.ControlEvent) -> None:
-        self._run(restore_default)
+        show_toast(message, kind="success" if ok else "error")

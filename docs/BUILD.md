@@ -1,33 +1,30 @@
-# Сборка Tigo (Windows, Nuitka standalone)
+# Сборка 2Wings (Windows, Nuitka standalone)
 
 ## Требования
 
 - Windows 10/11 x64
 - Python 3.12 + venv
-- [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — workload **Desktop development with C++**
+- Компилятор ставить не нужно: Nuitka сам скачает MinGW при первой сборке
 - Node.js 20+ (для `tools/generate_icons.mjs`, если нет готовых `app.ico` / `tray-*.png`)
-- Один раз запустить `python run.py`, чтобы Flet скачал desktop client в `%USERPROFILE%\.flet\client\`
 
 ## Установка зависимостей
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt -r requirements-build.txt
+.venv\Scripts\python -m pip install --no-deps -r requirements-ui.txt
 ```
 
 ## Ассеты (знаки, ico, трей)
 
-Знаки собираются из белого мастера `assets/brand/sources/tigo-simple.svg` и токенов Factiosi Umbrae:
+Растры и `app.ico` собираются из SVG в `assets/icons/`:
 
 ```powershell
-python tools\build_brand.py
 cd tools
 npm install
 node generate_icons.mjs
 cd ..
 ```
-
-Токены Umbrae обновляет `scripts\sync_umbrae.ps1` (нужен клон Factiosi рядом, `Repository\Factiosi`).
 
 ## Сборка
 
@@ -35,25 +32,25 @@ cd ..
 powershell -ExecutionPolicy Bypass -File scripts\build_nuitka.ps1
 ```
 
-Скрипт пересоздаёт `dist\Tigo\` и после успешной сборки удаляет промежуточный `dist\run.build\`.
+Скрипт пересоздаёт `dist\2Wings\` и после успешной сборки удаляет промежуточный `dist\run.build\`.
 
-Результат: **вся папка** `dist\Tigo\` — `Tigo.exe`, `TigoUpdate.exe`, `flet_client\`, `assets\icons\`, DLL и прочие зависимости Nuitka. Локальные `bin\` и `utils\` намеренно не копируются.
+Результат: **вся папка** `dist\2Wings\` — `2Wings.exe`, `TwoWingsUpdate.exe`, `assets\icons\`, DLL и прочие зависимости Nuitka. Локальные `bin\` и `utils\` намеренно не копируются.
 
-> **Важно:** распространяйте или копируйте **целиком папку** `dist\Tigo\`, а не один `Tigo.exe`. Без `flet_client\` и соседних DLL приложение не запустится.
+> **Важно:** распространяйте или копируйте **целиком папку** `dist\2Wings\`, а не один `2Wings.exe`. Без `flet_client\` и соседних DLL приложение не запустится.
 
-`Tigo.exe` собран с UAC-манifest (запуск от администратора). Двойной клик: UAC → фоновый daemon (трей) → GUI.
+`2Wings.exe` собран с UAC-манifest (запуск от администратора). Двойной клик: UAC → фоновый daemon (трей) → GUI.
 
 ## Installer (Inno Setup)
 
-После standalone-сборки скомпилируйте [`tools/tigo_installer.iss`](../tools/tigo_installer.iss):
+После standalone-сборки скомпилируйте [`tools/twowings_installer.iss`](../tools/twowings_installer.iss):
 
 ```powershell
-& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" tools\tigo_installer.iss
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" tools\twowings_installer.iss
 ```
 
-Результат: `dist\installer\Tigo-Setup-X.Y.Z.exe`. Версия в `.iss` должна совпадать с `src\core\version.py`.
+Результат: `dist\installer\2Wings-Setup-X.Y.Z.exe`. Версия в `.iss` должна совпадать с `src\core\version.py`.
 
-Installer устанавливает всю папку standalone в `{autopf}\Tigo`. При удалении он очищает установленный runtime и задачу `Tigo Autostart`, но сохраняет настройки и пользовательские данные в `%APPDATA%\Tigo`.
+Installer устанавливает всю папку standalone в `{autopf}\2Wings`. При удалении он очищает установленный runtime и задачу `2Wings Autostart`, но сохраняет настройки и пользовательские данные в `%APPDATA%\2Wings`.
 
 ## Выпуск релиза
 
@@ -71,26 +68,26 @@ powershell -ExecutionPolicy Bypass -File scripts\deploy_release.ps1 -Version 1.2
 
 Скрипт запускает unit-тесты, пересобирает standalone, проверяет отсутствие MCP и стороннего runtime, создаёт installer и SHA-256, отправляет `master`, tag и GitHub Release.
 
-`TigoUpdate.exe` (окно прогресса самообновления) собирается **один раз** локально и не коммитится в git:
+`TwoWingsUpdate.exe` (окно прогресса самообновления) собирается **один раз** локально и не коммитится в git:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build_update_splash.ps1
 ```
 
-Артефакт сохраняется в `scripts/release_assets/TigoUpdate.exe` (gitignored). `scripts/build_nuitka.ps1` копирует его в `dist\Tigo\` рядом с `Tigo.exe`; installer кладёт бинарник в `{Program Files}\Tigo\`. Исходники: `src/update_splash/`.
+Артефакт сохраняется в `scripts/release_assets/TwoWingsUpdate.exe` (gitignored). `scripts/build_nuitka.ps1` копирует его в `dist\2Wings\` рядом с `2Wings.exe`; installer кладёт бинарник в `{Program Files}\2Wings\`. Исходники: `src/update_splash/`.
 
-Релиз **1.3.1** однократно удаляет устаревшую копию `%APPDATA%\Tigo\TigoUpdate.exe` при любом запуске (миграция только в этом релизе, не в последующих).
+Релиз **1.3.1** однократно удаляет устаревшую копию `%APPDATA%\2Wings\TwoWingsUpdate.exe` при любом запуске (миграция только в этом релизе, не в последующих).
 
 ## Проверка
 
 ```powershell
-dist\Tigo\Tigo.exe --daemon
-dist\Tigo\Tigo.exe
-dist\Tigo\Tigo.exe --debug-console
+dist\2Wings\2Wings.exe --daemon
+dist\2Wings\2Wings.exe
+dist\2Wings\2Wings.exe --debug-console
 .venv\Scripts\python scripts\smoke_ipc_ping.py
 ```
 
-Дополнительно проверьте: второй `--daemon` не создаёт новый экземпляр; start/stop и подбор стратегий выполняются без консольных окон; debug console открывается из GUI.
+Дополнительно проверьте: второй `--daemon` не создаёт новый экземпляр; start/stop и тестирование стратегий выполняются без консольных окон; debug console открывается из GUI.
 
 ## winws2 runtime
 
@@ -98,5 +95,5 @@ dist\Tigo\Tigo.exe --debug-console
 
 ## Архитектура
 
-- **Daemon** (`Tigo.exe --daemon`) — tray, IPC, winws, обновления
-- **GUI** (`Tigo.exe`) — только Flet UI, управление через IPC; без daemon не стартует
+- **Daemon** (`2Wings.exe --daemon`) — tray, IPC, winws, обновления
+- **GUI** (`2Wings.exe`) — только окно на Qt, управление через IPC; без daemon не стартует

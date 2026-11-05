@@ -1,7 +1,7 @@
-"""Daemon: take adapters and hosts off the DNS service Tigo no longer offers.
+"""Daemon: take adapters and hosts off the DNS service 2Wings no longer offers.
 
 Zapret DNS closed plain DNS: an adapter left on its address has no working DNS at
-all, and its hosts lines lead to a relay Tigo no longer manages. The addresses
+all, and its hosts lines lead to a relay 2Wings no longer manages. The addresses
 stay here only to recognise what earlier versions wrote.
 """
 

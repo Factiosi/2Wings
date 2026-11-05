@@ -1,457 +1,223 @@
-"""Tigo application shell."""
+"""Main window: Fluent navigation over the pages."""
 
 from __future__ import annotations
 
-import asyncio
-import threading
+import ctypes
+import sys
+from collections.abc import Callable
 
-import flet as ft
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from qfluentwidgets import FluentWindow, NavigationItemPosition
 
 from src.core.branding import app_window_icon_path
-from src.core.process_label import schedule_flet_process_label
 from src.core.events import subscribe, unsubscribe
-from src.core.fonts import register_mono_font
-from src.core.paths import APP_NAME, is_packaged_app
-from src.core.version import __version__
-from src.core.settings import get_settings, save_settings
+from src.core.paths import APP_NAME, APP_USER_MODEL_ID, is_packaged_app
+from src.core.settings import get_settings
+from src.daemon.ipc import is_daemon_running
+from src.modules.lifecycle.public import handle_window_close, should_start_hidden
 from src.modules.strategies.repository import has_flowseal_strategies
-from src.modules.updates.app import (
-    MSG_APP_UP_TO_DATE,
-    check_and_install_app,
-    check_app_only,
-)
-from src.ui.theme import T, apply_theme, build_flet_theme, build_theme_tokens
-from src.modules.lifecycle.public import (
-    handle_window_close,
-    should_launch_gui,
-    should_start_hidden,
-    start_daemon_watchdog,
-)
-from src.ui.components import ANIM, close_active_select, lucide_icon, ui_text
+from src.modules.updates.app import MSG_APP_UP_TO_DATE, check_and_install_app, check_app_only
+from src.ui.components import Lucide, Page, apply_theme, use_vsync_rendering
+from src.ui.dispatch import install_dispatcher, run_bg, ui_call
+from src.ui.notifications import present_app_update_result, set_toast_host
 from src.ui.pages.dns import DnsPage
 from src.ui.pages.home import HomePage
 from src.ui.pages.hosts import HostsPage
 from src.ui.pages.lists import ListsPage
-from src.ui.pages.strategies import StrategiesPage
 from src.ui.pages.settings import SettingsPage
+from src.ui.pages.strategies import StrategiesPage
 from src.ui.pages.tg_ws_proxy import TgWsProxyPage
-from src.ui.notifications import present_app_update_result
+
+WATCHDOG_MS = 2000
+WINDOW_SIZE = (1040, 760)
+MIN_WINDOW_SIZE = (860, 600)
+NAV_WIDTH = 280
 
 
-def build_nav_items() -> list[tuple[str, str, str]]:
-    """(route, label, Lucide icon name)."""
+def visible_routes() -> set[str]:
+    """Routes the current settings allow; the rest stay out of navigation."""
     settings = get_settings()
-    items: list[tuple[str, str, str]] = [("home", "Главный экран", "house")]
+    routes = {"home", "tg_ws_proxy", "settings"}
     if settings.strategy_source == "flowseal":
+        routes.add("lists")
         if has_flowseal_strategies(settings):
-            items.append(("strategies", "Подбор стратегий", "flask-conical"))
-        items.append(("lists", "Редактирование листов", "file-cog"))
+            routes.add("strategies")
     if settings.advanced_mode:
-        items.extend(
-            [
-                ("dns", "Изменение DNS", "columns-3-cog"),
-                ("hosts", "Редактирование hosts", "server-cog"),
-            ]
+        routes.update({"dns", "hosts"})
+    return routes
+
+
+class _Host(QWidget):
+    """Navigation target. The page inside is built on entry and destroyed on leaving,
+    so every visit shows fresh data and no timers run for a page nobody sees."""
+
+    def __init__(self, route: str, factory: Callable[[], Page], parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName(route)
+        self._factory = factory
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self.page: Page | None = None
+
+    def enter(self) -> None:
+        if self.page is None:
+            self.page = self._factory()
+            self._layout.addWidget(self.page)
+
+    def leave(self) -> None:
+        if self.page is not None:
+            self.page.stop()
+            self._layout.removeWidget(self.page)
+            self.page.setParent(None)
+            self.page.deleteLater()
+            self.page = None
+
+
+class MainWindow(FluentWindow):
+    def __init__(self) -> None:
+        super().__init__()
+        self._recreate_with_alpha()
+        self.setWindowTitle(APP_NAME)
+        icon_path = app_window_icon_path()
+        if icon_path is not None:
+            self.setWindowIcon(QIcon(str(icon_path)))
+        self.resize(*WINDOW_SIZE)
+        self.setMinimumSize(*MIN_WINDOW_SIZE)
+        self.navigationInterface.setExpandWidth(NAV_WIDTH)
+        self.navigationInterface.setMinimumExpandWidth(MIN_WINDOW_SIZE[0])
+        self._hosts: dict[str, _Host] = {}
+        self._current: _Host | None = None
+        self._add_route("home", "Главный экран", Lucide("house"), lambda: HomePage(on_strategies_available=self.reload_shell))
+        self._add_route("strategies", "Тестирование стратегий", Lucide("flask-conical"), StrategiesPage)
+        self._add_route("lists", "Редактирование листов", Lucide("file-cog"), ListsPage)
+        self._add_route("dns", "Изменение DNS", Lucide("columns-3-cog"), DnsPage)
+        self._add_route("hosts", "Редактирование hosts", Lucide("server-cog"), HostsPage)
+        self._add_route("tg_ws_proxy", "TG WS Proxy", Lucide("send"), TgWsProxyPage)
+        self._add_route(
+            "settings",
+            "Настройки",
+            Lucide("settings"),
+            lambda: SettingsPage(on_settings_change=self.reload_shell),
+            position=NavigationItemPosition.BOTTOM,
         )
-    items.append(("tg_ws_proxy", "TG WS Proxy", "send"))
-    return items
+        self.stackedWidget.currentChanged.connect(self._on_page_changed)
+        self.navigationInterface.expand(useAni=False)
+        self._sync_navigation()
+        self._on_page_changed()
+        set_toast_host(self)
+        subscribe("strategies_changed", self._on_strategies_changed)
+        self._watchdog = QTimer(self)
+        self._watchdog.timeout.connect(self._check_daemon)
+        self._watchdog.start(WATCHDOG_MS)
+        self._watching = False
 
+    def _recreate_with_alpha(self) -> None:
+        """Mica over Direct3D needs a surface with alpha, but the library creates the native
+        window in its constructor without one: make it again and repeat the library's setup."""
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.destroy(True, False)
+        self.create()
+        self.updateFrameless()
+        self.windowHandle().screenChanged.connect(self._WindowsFramelessWindowBase__onScreenChanged)
+        self.setMicaEffectEnabled(False)
+        self.setMicaEffectEnabled(True)
 
-class TigoApp:
-    def __init__(self, page: ft.Page) -> None:
-        self.page = page
-        self._route = "home"
-        self._nav_controls: list[ft.Container] = []
-        self._body = ft.Container()
-        self._title = ft.Text()
-        self._home_page: HomePage | None = None
-        self._strategies_page: StrategiesPage | None = None
-        self._strategies_changed_handler = self._on_strategies_changed
-        self._app_update_started = False
-        self._rail_sheen: ft.Container | None = None
+    def _add_route(self, route, label, icon, factory, position=NavigationItemPosition.TOP) -> None:
+        host = _Host(route, factory, self)
+        self._hosts[route] = host
+        self.addSubInterface(host, icon, label, position=position)
+
+    def _sync_navigation(self) -> None:
+        allowed = visible_routes()
+        for route in self._hosts:
+            self.navigationInterface.widget(route).setVisible(route in allowed)
+
+    def _on_page_changed(self, _index: int = 0) -> None:
+        widget = self.stackedWidget.currentWidget()
+        if widget is self._current:
+            return
+        if self._current is not None:
+            self._current.leave()
+        self._current = widget if isinstance(widget, _Host) else None
+        if self._current is not None:
+            self._current.enter()
 
     def _on_strategies_changed(self) -> None:
-        if not self.page:
+        ui_call(self.reload_shell)
+
+    def reload_shell(self) -> None:
+        """Settings changed what is available: rebuild the open page, leave it if now hidden."""
+        self._sync_navigation()
+        current = self._current
+        if current is None:
             return
-        try:
-            self.page.run_thread(self._reload_shell)
-        except AttributeError:
-            self._reload_shell()
-
-    def _reset_shell(self) -> None:
-        self._body = ft.Container(expand=True, bgcolor=T.GROUND, animate_opacity=ANIM)
-        self._title = ui_text(
-            "",
-            size=T.FONT_TITLE,
-            weight=ft.FontWeight.W_600,
-            family=T.FONT_DISPLAY,
-        )
-        self._home_page = None
-        self._strategies_page = None
-
-    def show(self, *, initial_index: int = 0) -> None:
-        settings = get_settings()
-        apply_theme(settings.theme_mode, settings.portal_hue)
-        self._reset_shell()
-        self._configure_page()
-        start_daemon_watchdog(self.page)
-        nav = build_nav_items()
-        if 0 <= initial_index < len(nav):
-            self._route = nav[initial_index][0]
-        elif initial_index >= len(nav):
-            self._route = "settings"
-        self._build_layout()
-        unsubscribe("strategies_changed", self._strategies_changed_handler)
-        subscribe("strategies_changed", self._strategies_changed_handler)
-        self._navigate(self._route)
-        self._start_app_update_check()
-        self._start_rail_sheen()
-
-    def _start_app_update_check(self) -> None:
-        settings = get_settings()
-        if (
-            self._app_update_started
-            or not is_packaged_app()
-            or not settings.auto_check_app_updates_on_startup
-        ):
+        if current.objectName() not in visible_routes():
+            self.switchTo(self._hosts["home"])
             return
-        self._app_update_started = True
+        current.leave()
+        current.enter()
+
+    def start_update_check(self) -> None:
+        settings = get_settings()
+        if not is_packaged_app() or not settings.auto_check_app_updates_on_startup:
+            return
         auto_install = settings.auto_install_app_updates
 
-        def work() -> None:
-            result = (
-                check_and_install_app()
-                if auto_install
-                else check_app_only()
-            )
+        def done(result) -> None:
             ok, message, kind = result
             if ok and message == MSG_APP_UP_TO_DATE:
                 return
             if auto_install and ok and kind == "success":
                 return
+            present_app_update_result(ok, message, kind)
 
-            def notify() -> None:
-                present_app_update_result(self.page, ok, message, kind)
-
-            try:
-                self.page.run_thread(notify)
-            except AttributeError:
-                notify()
-
-        threading.Thread(
-            target=work,
-            daemon=True,
-            name="tigo-app-update-check",
-        ).start()
-
-    def _configure_page(self) -> None:
-        page = self.page
-        settings = get_settings()
-        register_mono_font(page)
-        page.title = APP_NAME
-        schedule_flet_process_label(page, APP_NAME)
-        page.bgcolor = T.GROUND
-        page.theme = build_flet_theme(build_theme_tokens("light", settings.portal_hue))
-        page.dark_theme = build_flet_theme(build_theme_tokens("dark", settings.portal_hue))
-        page.theme_mode = (
-            ft.ThemeMode.DARK if settings.theme_mode == "dark" else ft.ThemeMode.LIGHT
+        run_bg(
+            check_and_install_app if auto_install else check_app_only,
+            done,
+            name="twowings-app-update-check",
+            on_error=lambda exc: (False, str(exc), "error"),
         )
-        page.padding = 0
-        page.window.width = 1040
-        page.window.height = 760
-        page.window.min_width = 860
-        page.window.min_height = 600
-        if should_start_hidden():
-            page.window.visible = False
-            page.window.minimized = True
-        if settings.close_action == "minimize_tray":
-            page.window.prevent_close = True
-            page.window.on_event = self._on_window_event
-        else:
-            page.window.prevent_close = False
-        icon_path = app_window_icon_path()
-        if icon_path is not None:
-            page.window.icon = str(icon_path)
 
-    def _on_window_event(self, e: ft.WindowEvent) -> None:
-        if e.type != ft.WindowEventType.CLOSE:
+    def _check_daemon(self) -> None:
+        """The GUI has no purpose without the daemon: close when it is gone."""
+        if self._watching:
             return
-        settings = get_settings()
-        if handle_window_close(self.page, settings.close_action):
+        self._watching = True
 
-            async def close_window() -> None:
-                if self._home_page:
-                    self._home_page.stop()
-                if self._strategies_page:
-                    self._strategies_page.stop()
-                await self.page.window.destroy()
+        def done(alive) -> None:
+            self._watching = False
+            if not alive:
+                self.close()
 
-            self.page.run_task(close_window)
-            return
+        run_bg(is_daemon_running, done, name="twowings-daemon-watch", on_error=lambda _exc: True)
 
-        async def close_window() -> None:
-            await self.page.window.destroy()
-
-        self.page.run_task(close_window)
-
-    def _start_rail_sheen(self) -> None:
-        """Один таймер блика на окно. Смена пункта его не перезапускает: блик идёт по своим часам."""
-        page = self.page
-        page._tigo_rail_app = self  # type: ignore[attr-defined]
-        if getattr(page, "_tigo_rail_sheen_started", False):
-            return
-        page._tigo_rail_sheen_started = True  # type: ignore[attr-defined]
-
-        def place(left: float, animation: ft.Animation | None) -> None:
-            app = getattr(page, "_tigo_rail_app", None)
-            sheen = app._rail_sheen if app else None
-            if sheen is None or not sheen.page:
-                return
-            sheen.animate_position = animation
-            sheen.left = left
-            try:
-                sheen.update()
-            except Exception:
-                pass
-
-        # Проход анимирует сам Flutter с частотой экрана; Python лишь возвращает блик на старт.
-        async def loop() -> None:
-            while True:
-                period = T.RAIL_SHEEN_PERIOD
-                passage = period * 0.15
-                place(-96, None)
-                await asyncio.sleep(0.1)
-                place(T.SIDEBAR_WIDTH, ft.Animation(round(passage * 1000), ft.AnimationCurve.EASE_IN_OUT))
-                await asyncio.sleep(period - 0.1)
-
-        page.run_task(loop)
-
-    def _nav_button(self, route: str, label: str, icon: str) -> ft.Container:
-        active = route == self._route
-
-        def on_click(_: ft.ControlEvent) -> None:
-            self._navigate(route)
-
-        color = T.TEXT if active else T.TEXT_FAINT
-        row = ft.Row(
-            [
-                lucide_icon(icon, color=color),
-                ui_text(
-                    label,
-                    color=color,
-                    weight=ft.FontWeight.W_500,
-                    family=T.FONT_UI,
-                    expand=True,
-                    no_wrap=True,
-                ),
-            ],
-            spacing=8,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        )
-        padding = ft.Padding.symmetric(horizontal=8, vertical=10)
-        if not active:
-
-            def on_hover(e: ft.ControlEvent) -> None:
-                hovered = str(e.data).lower() == "true"
-                e.control.bgcolor = T.SELECTED if hovered else None
-                tone = T.TEXT_MUTED if hovered else T.TEXT_FAINT
-                for part in row.controls:
-                    part.color = tone
-                e.control.update()
-
-            return ft.Container(
-                content=row,
-                border_radius=T.RADIUS,
-                padding=padding,
-                on_click=on_click,
-                on_hover=on_hover,
-            )
-
-        # Активный пункт: кегль тот же, плашка с обводкой по контуру и бегущий блик (docs Factiosi UMBRAE.md).
-        sheen = ft.Container(
-            width=80,
-            top=0,
-            bottom=0,
-            left=-96,
-            gradient=ft.LinearGradient(
-                begin=ft.Alignment.CENTER_LEFT,
-                end=ft.Alignment.CENTER_RIGHT,
-                colors=["#00ffffff", T.RAIL_SHEEN, "#00ffffff"],
-            ),
-        )
-        self._rail_sheen = sheen
-        return ft.Container(
-            content=ft.Stack([sheen, ft.Container(content=row, padding=padding)]),
-            bgcolor=T.RAIL_ACTIVE_BG,
-            border=ft.Border.all(1, T.RAIL_ACTIVE_EDGE),
-            border_radius=T.RADIUS,
-            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-            on_click=on_click,
-        )
-
-    def _build_sidebar(self) -> ft.Container:
-        self._rail_sheen = None
-        nav = build_nav_items()
-        self._nav_controls = [self._nav_button(route, label, icon) for route, label, icon in nav]
-        settings_btn = self._nav_button("settings", "Настройки", "settings")
-        return ft.Container(
-            width=T.SIDEBAR_WIDTH,
-            bgcolor=T.GROUND,
-            padding=T.RAIL_EDGE,
-            border=ft.Border.only(right=ft.BorderSide(1, T.BORDER)),
-            content=ft.Column(
-                [
-                    ft.Column(self._nav_controls, spacing=T.RAIL_ITEM_GAP, tight=True),
-                    ft.Container(expand=True),
-                    settings_btn,
-                ],
-                spacing=T.RAIL_ITEM_GAP,
-                expand=True,
-            ),
-        )
-
-    def _build_layout(self) -> None:
-        sidebar = self._build_sidebar()
-        header = ft.Container(
-            content=self._title,
-            bgcolor=T.GROUND,
-            padding=ft.Padding.only(left=28, right=28, top=20, bottom=12),
-        )
-
-        self.page.add(
-            ft.Container(
-                expand=True,
-                bgcolor=T.GROUND,
-                content=ft.Row(
-                    [
-                        sidebar,
-                        ft.Column(
-                            [
-                                header,
-                                ft.Container(
-                                    content=self._body,
-                                    expand=True,
-                                    bgcolor=T.GROUND,
-                                    padding=ft.Padding.only(left=28, top=8, bottom=8),
-                                ),
-                            ],
-                            expand=True,
-                            spacing=0,
-                        ),
-                    ],
-                    expand=True,
-                    spacing=0,
-                    vertical_alignment=ft.CrossAxisAlignment.STRETCH,
-                ),
-            )
-        )
-
-    def _refresh_nav(self) -> None:
-        sidebar = self._build_sidebar()
-        root = self.page.controls[0]
-        if isinstance(root, ft.Container) and isinstance(root.content, ft.Row):
-            root.content.controls[0] = sidebar
-
-    def _route_index(self, route: str) -> int:
-        nav = build_nav_items()
-        for i, (rid, *_rest) in enumerate(nav):
-            if rid == route:
-                return i
-        return 0
-
-    def _navigate(self, route: str) -> None:
-        close_active_select(refresh=False)
-        if self._home_page:
-            self._home_page.stop()
-            self._home_page = None
-        if self._strategies_page:
-            self._strategies_page.stop()
-            self._strategies_page = None
-
-        self._route = route
-        self.page._tigo_route = route  # type: ignore[attr-defined]
-        self.page._tigo_nav_index = self._route_index(route)  # type: ignore[attr-defined]
-        self._refresh_nav()
-
-        titles = {rid: label for rid, label, *_ in build_nav_items()}
-        titles["settings"] = "Настройки"
-        self._title.value = titles.get(route, route)
-
-        self._body.opacity = 0
-        self._body.offset = ft.Offset(0, 0.015)
-        self.page.update()
-
-        if route == "home":
-            self._home_page = HomePage(
-                self.page,
-                on_strategies_available=self._reload_shell,
-            )
-            self._body.content = self._home_page.build()
-        elif route == "strategies":
-            if not has_flowseal_strategies():
-                self._navigate("home")
-                return
-            self._strategies_page = StrategiesPage(self.page)
-            self._body.content = self._strategies_page.build()
-        elif route == "lists":
-            self._body.content = ListsPage(self.page).build()
-        elif route == "dns":
-            self._body.content = DnsPage(self.page).build()
-        elif route == "hosts":
-            self._body.content = HostsPage(self.page).build()
-        elif route == "tg_ws_proxy":
-            self._body.content = TgWsProxyPage(self.page).build()
-        elif route == "settings":
-            self._body.content = SettingsPage(
-                self.page,
-                on_theme_change=self._reload_theme,
-                on_settings_change=self._reload_shell,
-            ).build()
-        else:
-            self._body.content = ft.Text("Страница не найдена")
-
-        self._body.opacity = 1
-        self._body.offset = ft.Offset(0, 0)
-        self.page.update()
-        if route == "home" and self._home_page:
-            self._home_page.on_mounted()
-
-    def _reload_shell(self) -> None:
-        route = getattr(self.page, "_tigo_route", self._route)
-        settings = get_settings()
-        if settings.strategy_source == "custom" and route in ("strategies", "lists"):
-            route = "home"
-        if not settings.advanced_mode and route in ("dns", "hosts"):
-            route = "home"
-        if route == "strategies" and not has_flowseal_strategies(settings):
-            route = "home"
-        self.page.controls.clear()
-        saved_route = route
-        self.show(initial_index=self._route_index(route))
-        if saved_route == "settings":
-            self._navigate(saved_route)
-
-    def _reload_theme(self) -> None:
-        if self._home_page:
-            self._home_page.stop()
-            self._home_page = None
-        if self._strategies_page:
-            self._strategies_page.stop()
-            self._strategies_page = None
-        route = self._route
-        self.page.controls.clear()
-        app = TigoApp(self.page)
-        app.show(initial_index=self._route_index(route))
-        if route == "settings":
-            app._navigate("settings")
+    def closeEvent(self, event) -> None:
+        self._watchdog.stop()
+        unsubscribe("strategies_changed", self._on_strategies_changed)
+        if self._current is not None:
+            self._current.leave()
+        handle_window_close(get_settings().close_action)
+        set_toast_host(None)
+        super().closeEvent(event)
+        QApplication.quit()
 
 
-def main(page: ft.Page) -> None:
-    TigoApp(page).show()
+def main() -> int:
+    if sys.platform == "win32":
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+    use_vsync_rendering()
+    app = QApplication(sys.argv)
+    install_dispatcher()
+    mode = get_settings().theme_mode
+    apply_theme(mode)
+    app.styleHints().colorSchemeChanged.connect(lambda _scheme: apply_theme(get_settings().theme_mode))
+    window = MainWindow()
     if not should_start_hidden():
-        page.window.minimized = False
-        page.window.visible = True
-        page.update()
+        window.show()
+    window.start_update_check()
+    return app.exec()
 
 
-__all__ = ["TigoApp", "build_nav_items", "main"]
+__all__ = ["MainWindow", "main", "visible_routes"]

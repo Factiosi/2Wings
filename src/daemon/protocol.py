@@ -1,4 +1,4 @@
-"""IPC message types for Tigo daemon."""
+"""IPC message types for 2Wings daemon."""
 
 from __future__ import annotations
 

@@ -122,7 +122,7 @@ def _start_locked() -> str | None:
     if running():
         return None
     _last_error = ""
-    _thread = threading.Thread(target=_run_thread, daemon=True, name="tigo-tg-ws-proxy")
+    _thread = threading.Thread(target=_run_thread, daemon=True, name="twowings-tg-ws-proxy")
     _thread.start()
     deadline = time.monotonic() + 2.0
     while time.monotonic() < deadline:

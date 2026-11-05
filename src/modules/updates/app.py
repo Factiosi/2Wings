@@ -1,4 +1,4 @@
-"""Tigo application updates from verified GitHub release installers."""
+"""2Wings application updates from verified GitHub release installers."""
 
 from __future__ import annotations
 
@@ -13,20 +13,20 @@ from pathlib import Path
 import httpx
 
 from src.core.debug_log import debug, info
-from src.core.paths import TIGO_RELEASE_API, is_packaged_app, temp_dir
+from src.core.paths import TWOWINGS_RELEASE_API, is_packaged_app, temp_dir
 from src.core.version import __version__
 from src.modules.updates.splash_launcher import launch_updater
 
-MSG_APP_UP_TO_DATE = "У вас последняя актуальная версия Tigo"
-MSG_APP_UPDATE_AVAILABLE = "Доступна новая версия Tigo"
+MSG_APP_UP_TO_DATE = "У вас последняя актуальная версия 2Wings"
+MSG_APP_UPDATE_AVAILABLE = "Доступна новая версия 2Wings"
 MSG_APP_UPDATE_CLICKABLE = (
-    "Доступна новая версия Tigo (нажмите сюда чтобы скачать и установить)"
+    "Доступна новая версия 2Wings (нажмите сюда чтобы скачать и установить)"
 )
-MSG_APP_DOWNLOADING = "Новая версия Tigo доступна и скачивается"
+MSG_APP_DOWNLOADING = "Новая версия 2Wings доступна и скачивается"
 MSG_APP_INSTALL_IN_PROGRESS = (
-    "Установка Tigo уже выполняется. Дождитесь завершения мастера установки."
+    "Установка 2Wings уже выполняется. Дождитесь завершения мастера установки."
 )
-_ASSET_RE = re.compile(r"^Tigo-Setup-(\d+\.\d+\.\d+)\.exe$", re.I)
+_ASSET_RE = re.compile(r"^2Wings-Setup-(\d+\.\d+\.\d+)\.exe$", re.I)
 _install_lock = threading.Lock()
 
 
@@ -50,10 +50,10 @@ def _version_tuple(value: str) -> tuple[int, int, int, int]:
 def fetch_app_update() -> AppUpdate | None:
     with httpx.Client(
         timeout=httpx.Timeout(30.0, connect=10.0),
-        headers={"User-Agent": f"Tigo/{__version__}", "Cache-Control": "no-cache"},
+        headers={"User-Agent": f"2Wings/{__version__}", "Cache-Control": "no-cache"},
         follow_redirects=True,
     ) as client:
-        response = client.get(TIGO_RELEASE_API)
+        response = client.get(TWOWINGS_RELEASE_API)
         response.raise_for_status()
         payload = response.json()
 
@@ -143,7 +143,7 @@ def download_verified_installer(update: AppUpdate) -> Path:
     partial.unlink(missing_ok=True)
     with httpx.Client(
         timeout=httpx.Timeout(300.0, connect=15.0),
-        headers={"User-Agent": f"Tigo/{__version__}"},
+        headers={"User-Agent": f"2Wings/{__version__}"},
         follow_redirects=True,
     ) as client:
         _download(client, update.installer_url, partial)
@@ -160,7 +160,7 @@ def download_verified_installer(update: AppUpdate) -> Path:
 
 def launch_installer(installer: Path) -> None:
     if not is_packaged_app():
-        raise RuntimeError("Автоустановка доступна только в собранной версии Tigo.")
+        raise RuntimeError("Автоустановка доступна только в собранной версии 2Wings.")
     creationflags = (
         subprocess.CREATE_NO_WINDOW
         | getattr(subprocess, "DETACHED_PROCESS", 0)
@@ -174,7 +174,7 @@ def launch_installer(installer: Path) -> None:
             "/NORESTART",
             "/CLOSEAPPLICATIONS",
             "/FORCECLOSEAPPLICATIONS",
-            "/TIGORELAUNCH=1",
+            "/TWOWINGSRELAUNCH=1",
         ],
         cwd=str(installer.parent),
         creationflags=creationflags,
@@ -188,7 +188,7 @@ def check_app_only() -> tuple[bool, str, str]:
         update = fetch_app_update()
     except Exception as exc:  # noqa: BLE001
         debug("app_updates", f"check failed: {exc}", level="error")
-        return False, f"Не удалось проверить обновления Tigo: {exc}", "error"
+        return False, f"Не удалось проверить обновления 2Wings: {exc}", "error"
     if update is None:
         return True, MSG_APP_UP_TO_DATE, "success"
     return True, MSG_APP_UPDATE_CLICKABLE, "warning"
@@ -207,13 +207,13 @@ def check_and_install_app() -> tuple[bool, str, str]:
             installer_url=update.installer_url,
             checksum_url=update.checksum_url,
         ):
-            return True, f"Обновление до Tigo {update.version} запущено", "success"
-        # Окна обновления нет: Tigo скачивает и ставит сам, без прогресса.
+            return True, f"Обновление до 2Wings {update.version} запущено", "success"
+        # Окна обновления нет: 2Wings скачивает и ставит сам, без прогресса.
         installer = download_verified_installer(update)
         launch_installer(installer)
-        return True, f"Tigo {update.version} загружен. Запускается установка.", "success"
+        return True, f"2Wings {update.version} загружен. Запускается установка.", "success"
     except Exception as exc:  # noqa: BLE001
         debug("app_updates", f"install failed: {exc}", level="error")
-        return False, f"Не удалось установить обновление Tigo: {_format_install_error(exc)}", "error"
+        return False, f"Не удалось установить обновление 2Wings: {_format_install_error(exc)}", "error"
     finally:
         _install_lock.release()

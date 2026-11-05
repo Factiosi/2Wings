@@ -40,7 +40,7 @@ def _engine_preflight() -> str | None:
     missing = missing_engine_files()
     if missing:
         names = ", ".join(path.name for path in missing)
-        return f"Движок winws2 установлен не полностью (нет {names}). Перезапустите Tigo, чтобы скачать zapret2."
+        return f"Движок winws2 установлен не полностью (нет {names}). Перезапустите 2Wings, чтобы скачать zapret2."
     foreign = find_foreign_winws_processes()
     if foreign:
         pid, path = foreign[0]

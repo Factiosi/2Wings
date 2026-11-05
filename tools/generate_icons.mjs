@@ -3,7 +3,7 @@
  * Usage: cd tools && npm install && node generate_icons.mjs
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,12 +42,13 @@ await writePng("tray-idle.svg", "tray-idle.png", 64);
 await writeIco("app.svg", "app.ico");
 await writePng("mark-dark.svg", "mark-dark.png", 160);
 
-const menuIcons = [
-  ["menu/start.svg", "menu/start.png"],
-  ["menu/stop.svg", "menu/stop.png"],
-  ["menu/open.svg", "menu/open.png"],
-  ["menu/quit.svg", "menu/quit.png"],
-];
-for (const [svgRel, pngRel] of menuIcons) {
-  await writePng(svgRel, pngRel, 16);
+// Tray menu: Lucide icons in the text colours of the native dark and light menus.
+mkdirSync(join(ICONS, "menu"), { recursive: true });
+for (const name of ["app-window", "play", "square", "power"]) {
+  const source = readFileSync(join(ICONS, "lucide", `${name}.svg`), "utf8");
+  for (const [theme, color] of [["dark", "#ffffff"], ["light", "#1a1a1a"]]) {
+    const resvg = new Resvg(source.replaceAll("currentColor", color), { fitTo: { mode: "width", value: 32 } });
+    writeFileSync(join(ICONS, "menu", `${name}-${theme}.png`), resvg.render().asPng());
+    console.log(`OK menu/${name}-${theme}.png`);
+  }
 }

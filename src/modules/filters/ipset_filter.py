@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.core.debug_log import debug
 from src.core.paths import flowseal_version_lists_dir
-from src.core.settings import AppSettings, IpsetFilterMode, get_settings, save_settings
+from src.core.settings import IpsetFilterMode, get_settings, save_settings
 
 DUMMY_IP = "203.0.113.113/32"
 

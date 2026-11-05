@@ -15,10 +15,9 @@ tools/node_modules/
 .vscode/
 .idea/
 .cursor/
-docs/AGENTS-UI-SELECT.md
 docs/AUTOMATION.md
 docs/CHANGELOG.md
-scripts/tigo_mcp.py
+scripts/twowings_mcp.py
 tests/test_mcp_server.py
 requirements-dev.txt
 
@@ -55,3 +54,5 @@ nuitka-crash-report.xml
 
 # Claude Code: локальные настройки агента
 /.claude/settings.local.json
+/.claude/settings.json
+/.claude/output-styles/

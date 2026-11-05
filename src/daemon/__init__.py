@@ -1,1 +1,1 @@
-"""Tigo background daemon — tray, winws lifecycle, IPC."""
+"""2Wings background daemon — tray, winws lifecycle, IPC."""

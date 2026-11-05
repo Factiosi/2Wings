@@ -1,23 +1,21 @@
-"""System tray icon and menu for Tigo daemon."""
+"""System tray icon and menu for 2Wings daemon."""
 
 from __future__ import annotations
 
 import sys
 import threading
-import time
-from typing import Callable
 
 import pystray
 
-from src.core.branding import load_tray_icon, load_tray_menu_icon
+from src.core.branding import load_tray_icon
 from src.core.debug_log import debug
 from src.core.paths import APP_NAME
 from src.daemon.ui_launcher import launch_gui, notify_spawn_error
 
 if sys.platform == "win32":
-    from src.daemon.tray_win32 import TigoTrayIcon, menu_item
+    from src.daemon.tray_win32 import TwoWingsTrayIcon, menu_item
 else:
-    TigoTrayIcon = pystray.Icon  # type: ignore[misc, assignment]
+    TwoWingsTrayIcon = pystray.Icon  # type: ignore[misc, assignment]
 
     def menu_item(text, action, *, icon=None, **kwargs):  # type: ignore[misc]
         return pystray.MenuItem(text, action, **kwargs)
@@ -42,21 +40,11 @@ class TrayController:
         self._poll_stop = threading.Event()
         self._last_running: bool | None = None
         self._last_busy: bool | None = None
-        self._menu_icons = self._load_menu_icons()
-
-    @staticmethod
-    def _load_menu_icons() -> dict[str, object]:
-        icons: dict[str, object] = {}
-        for name in ("start", "stop", "open", "quit"):
-            image = load_tray_menu_icon(name)
-            if image is not None:
-                icons[name] = image
-        return icons
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
-        self._thread = threading.Thread(target=self._run, daemon=False, name="tigo-tray")
+        self._thread = threading.Thread(target=self._run, daemon=False, name="twowings-tray")
         self._thread.start()
 
     def stop(self) -> None:
@@ -72,23 +60,14 @@ class TrayController:
         running, _busy = self._status_provider()
         self._last_running = running
         menu = pystray.Menu(
-            menu_item(
-                "Запустить",
-                self._menu_start,
-                icon=self._menu_icons.get("start"),
-                enabled=self._can_start,
-            ),
-            menu_item(
-                "Остановить",
-                self._menu_stop,
-                icon=self._menu_icons.get("stop"),
-                enabled=self._can_stop,
-            ),
+            menu_item("Открыть окно", self._menu_open, icon="app-window", default=True),
             pystray.Menu.SEPARATOR,
-            menu_item("Открыть окно", self._menu_open, icon=self._menu_icons.get("open")),
-            menu_item("Завершить работу", self._menu_shutdown, icon=self._menu_icons.get("quit")),
+            menu_item("Запустить", self._menu_start, icon="play", enabled=self._can_start),
+            menu_item("Остановить", self._menu_stop, icon="square", enabled=self._can_stop),
+            pystray.Menu.SEPARATOR,
+            menu_item("Завершить работу", self._menu_shutdown, icon="power"),
         )
-        self._icon = TigoTrayIcon(
+        self._icon = TwoWingsTrayIcon(
             APP_NAME,
             load_tray_icon(running=running),
             APP_NAME,
@@ -99,7 +78,7 @@ class TrayController:
         self._poll_thread = threading.Thread(
             target=self._poll_tray_icon,
             daemon=True,
-            name="tigo-tray-icon",
+            name="twowings-tray-icon",
         )
         self._poll_thread.start()
         self._icon.run()

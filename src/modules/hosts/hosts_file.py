@@ -1,6 +1,6 @@
 """Read and edit the Windows hosts file.
 
-Tigo owns only blocks between its own markers; everything else in the file is
+2Wings owns only blocks between its own markers; everything else in the file is
 the user's and is kept byte-for-byte, apart from line endings.
 """
 
@@ -14,9 +14,13 @@ from pathlib import Path
 
 from src.core.debug_log import debug
 
-_BEGIN = "# >>> tigo:{} >>>"
-_END = "# <<< tigo:{} <<<"
-_BLOCK_LINE = re.compile(r"^# (>>>|<<<) tigo:([a-z0-9._-]+) (>>>|<<<)$")
+_BEGIN = "# >>> twowings:{} >>>"
+_END = "# <<< twowings:{} <<<"
+_BLOCK_LINE = re.compile(r"^# (>>>|<<<) twowings:([a-z0-9._-]+) (>>>|<<<)$")
+# Versions up to 1.5.8 were called Tigo; their blocks become ours on the next read.
+_LEGACY_BLOCK_LINE = re.compile(r"^# (>>>|<<<) tigo:([a-z0-9._-]+) (>>>|<<<)(?=\r?$)", re.M)
+_BACKUP_NAME = "hosts.twowings.bak"
+_LEGACY_BACKUP_NAME = "hosts.tigo.bak"
 
 DEFAULT_HOSTS = """\
 # Copyright (c) 1993-2009 Microsoft Corp.
@@ -51,7 +55,7 @@ def hosts_path() -> Path:
 @dataclass(frozen=True)
 class HostsSummary:
     entries: int
-    blocks: dict[str, int]  # Tigo block id -> entries in it
+    blocks: dict[str, int]  # 2Wings block id -> entries in it
 
 
 def decode(raw: bytes) -> str:
@@ -104,7 +108,7 @@ def remove_block(lines: list[str], block_id: str) -> list[str]:
 
 
 def set_block(text: str, block_id: str, rows: list[tuple[str, str]] | None) -> str:
-    """Replace Tigo's block ``block_id``; ``rows=None`` or empty removes it."""
+    """Replace 2Wings's block ``block_id``; ``rows=None`` or empty removes it."""
     lines = remove_block(text.splitlines(), block_id)
     while lines and not lines[-1].strip():
         lines.pop()
@@ -120,15 +124,16 @@ def set_block(text: str, block_id: str, rows: list[tuple[str, str]] | None) -> s
 def read_hosts(path: Path | None = None) -> str:
     path = path or hosts_path()
     try:
-        return decode(path.read_bytes())
+        text = decode(path.read_bytes())
     except FileNotFoundError:
         return ""
+    return _LEGACY_BLOCK_LINE.sub(r"# \1 twowings:\2 \3", text)
 
 
 def write_hosts(text: str, path: Path | None = None) -> None:
     """Write in place (the file keeps its ACL) and restore the read-only flag."""
     path = path or hosts_path()
-    backup = path.with_name("hosts.tigo.bak")
+    backup = backup_path(path)
     if path.exists() and not backup.exists():
         backup.write_bytes(path.read_bytes())
     mode = path.stat().st_mode if path.exists() else None
@@ -145,4 +150,8 @@ def write_hosts(text: str, path: Path | None = None) -> None:
 
 
 def backup_path(path: Path | None = None) -> Path:
-    return (path or hosts_path()).with_name("hosts.tigo.bak")
+    path = path or hosts_path()
+    backup = path.with_name(_BACKUP_NAME)
+    legacy = path.with_name(_LEGACY_BACKUP_NAME)
+    # The copy taken before the first change stays the original one after the rename.
+    return legacy if legacy.exists() and not backup.exists() else backup

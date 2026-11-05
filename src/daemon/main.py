@@ -1,4 +1,4 @@
-"""Tigo background daemon entry."""
+"""2Wings background daemon entry."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from src.modules.strategy_testing.results import load_cache
 from src.modules.strategy_testing.runner import StrategyTestJob, StrategyTestRunner
 
 
-class TigoDaemon:
+class TwoWingsDaemon:
     def __init__(self) -> None:
         self._shutdown = threading.Event()
         self._tray: TrayController | None = None
@@ -46,15 +46,15 @@ class TigoDaemon:
         self._ipc.start()
         from src.core.process_label import set_process_description
 
-        if set_process_description("Tigo daemon"):
-            info("daemon", "process description: Tigo daemon")
+        if set_process_description("2Wings daemon"):
+            info("daemon", "process description: 2Wings daemon")
         else:
             warn("daemon", "failed to set process description")
         info("daemon", "IPC ready")
         threading.Thread(
             target=self._start_tg_proxy,
             daemon=True,
-            name="tigo-tg-ws-proxy-boot",
+            name="twowings-tg-ws-proxy-boot",
         ).start()
 
         self._tray = TrayController(
@@ -63,10 +63,10 @@ class TigoDaemon:
             on_shutdown=self._request_shutdown_from_tray,
             status_provider=self._tray_status,
         )
-        tray_thread = threading.Thread(target=self._tray.start, daemon=True, name="tigo-tray")
+        tray_thread = threading.Thread(target=self._tray.start, daemon=True, name="twowings-tray")
         tray_thread.start()
 
-        threading.Thread(target=self._bootstrap_runtime, daemon=True, name="tigo-daemon-bootstrap").start()
+        threading.Thread(target=self._bootstrap_runtime, daemon=True, name="twowings-daemon-bootstrap").start()
 
         def handle_signal(_signum, _frame) -> None:
             self._request_shutdown(stop_icon=True)
@@ -107,10 +107,10 @@ class TigoDaemon:
             run_startup_updates(
                 on_message=lambda msg, error=False: warn("updates", msg) if error else info("updates", msg)
             )
-            threading.Thread(target=self._clean_retired_dns, daemon=True, name="tigo-dns-cleanup").start()
+            threading.Thread(target=self._clean_retired_dns, daemon=True, name="twowings-dns-cleanup").start()
             if get_settings().auto_check_updates_on_startup:
                 threading.Thread(
-                    target=self._refresh_hosts_catalog, daemon=True, name="tigo-hosts-catalog"
+                    target=self._refresh_hosts_catalog, daemon=True, name="twowings-hosts-catalog"
                 ).start()
             runtime_result = ensure_runtime_installed(allow_update=get_settings().auto_promote_updates)
             if runtime_result.ok:
@@ -127,8 +127,12 @@ class TigoDaemon:
     @staticmethod
     def _clean_retired_dns() -> None:
         from src.modules.dns.cleanup import clean_retired_dns
+        from src.core.paths import remove_legacy_updater
+        from src.modules.lifecycle.public import sync_autostart_task
 
         try:
+            remove_legacy_updater()
+            sync_autostart_task()
             clean_retired_dns()
         except Exception as exc:  # noqa: BLE001 - must not take the daemon's startup with it
             warn("dns", f"не удалось убрать прежний DNS: {exc}")
@@ -153,10 +157,10 @@ class TigoDaemon:
     def _tray_start(self, request: dict | None = None) -> tuple[bool, str]:
         if not self._bootstrap_done.is_set():
             warn("daemon", "runtime still initializing")
-            return False, "Tigo ещё инициализируется. Повторите через несколько секунд."
+            return False, "2Wings ещё инициализируется. Повторите через несколько секунд."
         with self._operation_lock:
             if self._test_runner.running:
-                return False, "Сначала остановите подбор стратегий."
+                return False, "Сначала остановите тестирование стратегий."
             reload_settings()
             payload = request or {}
             explicit_id = payload.get("strategy_id")
@@ -180,7 +184,7 @@ class TigoDaemon:
     def _tray_stop(self) -> tuple[bool, str]:
         with self._operation_lock:
             if self._test_runner.running:
-                return False, "Сначала остановите подбор стратегий."
+                return False, "Сначала остановите тестирование стратегий."
             return stop_strategy()
 
     def _test_done(self, ok: bool, message: str) -> None:
@@ -189,7 +193,7 @@ class TigoDaemon:
 
     def _start_tests(self, request: dict) -> tuple[bool, str]:
         if not self._bootstrap_done.is_set():
-            return False, "Tigo ещё инициализируется. Повторите через несколько секунд."
+            return False, "2Wings ещё инициализируется. Повторите через несколько секунд."
         version = str(request.get("version") or "").strip()
         test_type = str(request.get("test_type") or "standard").strip()
         raw_ids = request.get("strategy_ids")
@@ -221,7 +225,7 @@ class TigoDaemon:
             "ok": False,
             "error": (
                 "Automation API отключён. Для compiled daemon задайте "
-                "TIGO_AUTOMATION=1 до запуска."
+                "TWOWINGS_AUTOMATION=1 до запуска."
             ),
         }
 
@@ -242,8 +246,7 @@ class TigoDaemon:
             "game_filter": {"off", "all", "tcp", "udp"},
             "ipset_filter": {"loaded", "none", "any"},
             "version_retention": {"all", "latest_only", "keep_previous"},
-            "theme_mode": {"dark", "light"},
-            "portal_hue": {"purple", "green", "blue", "burgundy", "yellow", "brown", "orange", "mono"},
+            "theme_mode": {"auto", "dark", "light"},
             "strategy_source": {"flowseal", "custom"},
             "close_action": {"exit", "minimize_tray"},
         }
@@ -311,7 +314,7 @@ class TigoDaemon:
             return self._automation_denied()
         with self._operation_lock:
             if self._test_runner.running:
-                return {"ok": False, "error": "Сначала остановите подбор стратегий."}
+                return {"ok": False, "error": "Сначала остановите тестирование стратегий."}
             was_running = get_runtime_status().running
             if was_running:
                 stop_strategy(cleanup_windivert=False)
@@ -431,7 +434,7 @@ class TigoDaemon:
 
 
 def run_daemon() -> None:
-    TigoDaemon().run()
+    TwoWingsDaemon().run()
 
 
 if __name__ == "__main__":

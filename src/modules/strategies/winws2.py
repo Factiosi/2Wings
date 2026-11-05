@@ -161,8 +161,8 @@ _FAKE_OPTION_BY_GROUP = {
 DEFAULT_TLS_BLOB = "fake_default_tls"
 DEFAULT_HTTP_BLOB = "fake_default_http"
 DEFAULT_QUIC_BLOB = "fake_default_quic"
-ZERO64_BLOB = "tigo_zero64"
-ZERO256_BLOB = "tigo_zero256"
+ZERO64_BLOB = "twowings_zero64"
+ZERO256_BLOB = "twowings_zero256"
 _ZERO_BLOBS = {ZERO64_BLOB: 64, ZERO256_BLOB: 256}
 _DEFAULT_TLS_MOD = "rnd,rndsni,dupsid"
 
@@ -609,7 +609,7 @@ def convert_winws1_argv(argv: list[str], *, lua_dir: Path) -> Winws2Args:
     return Winws2Args([*global_options, *blobs.options(), *_lua_init(lua_dir), *body], warnings)
 
 
-TLS_WATCH_FUNCTION = "tigo_tls_watch"
+TLS_WATCH_FUNCTION = "twowings_tls_watch"
 # Inbound replies that mean "the server could not parse our ClientHello":
 # a plaintext fatal TLS alert (record 0x15, version 3.x, length 2, level 2) or a
 # plain "HTTP/" answer from a non-HTTP port. Only these packets are diverted,
@@ -635,7 +635,7 @@ def _split_profiles(argv: list[str]) -> list[list[str]]:
 
 
 def inject_tls_watch(argv: list[str], *, script: Path, writable_dir: Path) -> list[str]:
-    """Put tigo_tls_watch first into every profile and divert inbound TLS alerts.
+    """Put twowings_tls_watch first into every profile and divert inbound TLS alerts.
 
     A profile that cannot exclude by hostname (no --hostlist-exclude, e.g. the
     game filter on ipset) reports the server address instead of the domain.

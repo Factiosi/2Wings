@@ -1,6 +1,6 @@
-"""Работа TigoUpdate: скачать установщик, сверить SHA-256, поставить, дождаться новой Tigo.
+"""Работа TwoWingsUpdate: скачать установщик, сверить SHA-256, поставить, дождаться новой 2Wings.
 
-Без зависимостей кроме стандартной библиотеки: программа живёт вне Program Files\\Tigo
+Без зависимостей кроме стандартной библиотеки: программа живёт вне Program Files\\2Wings
 и не должна тянуть ничего из установки, которую сама заменяет.
 """
 
@@ -58,7 +58,7 @@ class Worker:
             return State(s.stage, s.caption, s.progress, s.detail, list(s.log))
 
     def start(self) -> None:
-        threading.Thread(target=self._run, name="tigo-update", daemon=True).start()
+        threading.Thread(target=self._run, name="twowings-update", daemon=True).start()
 
     def _set(self, *, log: str | None = None, **changes) -> None:
         with self._lock:
@@ -81,7 +81,7 @@ class Worker:
         installer = job.work_dir / name
         checksum = job.work_dir / f"{name}.sha256"
 
-        self._set(stage="download", caption="Скачивание обновления", log=f"Tigo {job.from_version} → {job.version}")
+        self._set(stage="download", caption="Скачивание обновления", log=f"2Wings {job.from_version} → {job.version}")
         _fetch(job.checksum_url, checksum)
         expected = _expected_sum(checksum)
         if installer.is_file() and _sha256(installer) == expected:
@@ -98,13 +98,13 @@ class Worker:
 
         progress_file = job.work_dir / "install-progress.txt"
         progress_file.unlink(missing_ok=True)
-        self._set(stage="install", caption="Установка файлов", progress=None, detail="Закрытие Tigo", log="Запуск установщика")
+        self._set(stage="install", caption="Установка файлов", progress=None, detail="Закрытие 2Wings", log="Запуск установщика")
         code = self._install(installer, progress_file)
         if code != 0:
             raise RuntimeError(f"установщик завершился с кодом {code}")
-        self._set(stage="launch", caption="Запуск Tigo", progress=None, detail="", log="Файлы установлены")
-        self._wait_for_tigo()
-        self._set(stage="done", caption=f"Tigo {job.version} запущен", progress=1.0, log=f"Tigo {job.version} запущен")
+        self._set(stage="launch", caption="Запуск 2Wings", progress=None, detail="", log="Файлы установлены")
+        self._wait_for_twowings()
+        self._set(stage="done", caption=f"2Wings {job.version} запущен", progress=1.0, log=f"2Wings {job.version} запущен")
 
     def _download(self, url: str, destination: Path) -> None:
         with _open(url) as response:
@@ -136,7 +136,7 @@ class Worker:
     def _install(self, installer: Path, progress_file: Path) -> int:
         params = (
             "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS "
-            f'/TIGORELAUNCH=1 "/TIGOPROGRESS={progress_file}"'
+            f'/TWOWINGSRELAUNCH=1 "/TWOWINGSPROGRESS={progress_file}"'
         )
         process = _shell_execute(installer, params)
         try:
@@ -150,13 +150,13 @@ class Worker:
         finally:
             _kernel32.CloseHandle(process)
 
-    def _wait_for_tigo(self) -> None:
+    def _wait_for_twowings(self) -> None:
         deadline = time.monotonic() + _LAUNCH_TIMEOUT_S
         while time.monotonic() < deadline:
-            if _tigo_done(self.job.done_file) or _daemon_reachable():
+            if _twowings_done(self.job.done_file) or _daemon_reachable():
                 return
             time.sleep(0.4)
-        raise TimeoutError("Tigo установлен, но не запустился. Откройте его из меню «Пуск»")
+        raise TimeoutError("2Wings установлен, но не запустился. Откройте его из меню «Пуск»")
 
 
 def _reason(exc: Exception) -> str:
@@ -173,7 +173,7 @@ def _mb(value: float) -> str:
 
 
 def _open(url: str):
-    request = urllib.request.Request(url, headers={"User-Agent": "TigoUpdate", "Cache-Control": "no-cache"})
+    request = urllib.request.Request(url, headers={"User-Agent": "TwoWingsUpdate", "Cache-Control": "no-cache"})
     return urllib.request.urlopen(request, timeout=60, context=ssl.create_default_context())
 
 
@@ -198,7 +198,7 @@ def _sha256(path: Path) -> str:
 
 
 def _install_fraction(path: Path) -> float | None:
-    """Inno Setup пишет «текущее максимум» из CurInstallProgressChanged, см. tigo_installer.iss."""
+    """Inno Setup пишет «текущее максимум» из CurInstallProgressChanged, см. twowings_installer.iss."""
     try:
         cur, top = (int(v) for v in path.read_text(encoding="ascii").split()[:2])
     except (OSError, ValueError):
@@ -206,7 +206,7 @@ def _install_fraction(path: Path) -> float | None:
     return min(cur / top, 1.0) if top > 0 else None
 
 
-def _tigo_done(path: Path) -> bool:
+def _twowings_done(path: Path) -> bool:
     try:
         return json.loads(path.read_text(encoding="utf-8")).get("phase") == "done"
     except (OSError, ValueError, AttributeError):

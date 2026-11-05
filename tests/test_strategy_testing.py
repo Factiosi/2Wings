@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication
 
 from src.modules.strategy_testing import cache
 from src.modules.strategy_testing import results as tr
@@ -111,6 +116,10 @@ class LiveProbeTests(unittest.TestCase):
 
 
 class ProbeTableViewTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._app = QApplication.instance() or QApplication([])
+
     def test_loading_spinner_is_reused_between_syncs(self) -> None:
         from src.ui.probe_table import ProbeTableView
 

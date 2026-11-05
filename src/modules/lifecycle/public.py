@@ -10,7 +10,8 @@ from pathlib import Path
 from src.core.debug_log import debug
 
 
-AUTOSTART_TASK_NAME = "Tigo Autostart"
+AUTOSTART_TASK_NAME = "2Wings Autostart"
+LEGACY_AUTOSTART_TASK_NAME = "Tigo Autostart"
 
 
 def is_runtime_available() -> bool:
@@ -105,12 +106,12 @@ def require_daemon_for_gui() -> None:
         return
     from src.core.paths import APP_NAME
 
-    text = msg or "Не удалось запустить фоновый процесс Tigo."
+    text = msg or "Не удалось запустить фоновый процесс 2Wings."
     if is_runtime_available() and "WinError 2" in text:
         text = (
             f"{text}\n\n"
-            "Проверьте, что запускаете полную папку dist\\Tigo\\ "
-            "(Tigo.exe + flet_client\\ + assets\\icons\\)."
+            "Проверьте, что запускаете полную папку dist\\2Wings\\ "
+            "(2Wings.exe + assets\\icons\\)."
         )
     try:
         import ctypes
@@ -122,7 +123,28 @@ def require_daemon_for_gui() -> None:
     raise SystemExit(1)
 
 
-def handle_window_close(page, close_action: str) -> bool:
+def sync_autostart_task() -> None:
+    """Drop the task of the previous name and keep ours pointing at the running exe."""
+    from src.core.paths import is_packaged_app
+
+    if sys.platform != "win32" or not is_packaged_app():
+        return
+    try:
+        subprocess.run(
+            ["schtasks", "/Delete", "/TN", LEGACY_AUTOSTART_TASK_NAME, "/F"],
+            capture_output=True,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    except OSError as exc:
+        debug("lifecycle", f"legacy autostart removal failed: {exc}", level="warn")
+    from src.core.settings import get_settings
+
+    if get_settings().autostart_enabled:
+        apply_autostart_setting(True)
+
+
+def handle_window_close(close_action: str) -> bool:
     """Return True if close was handled (minimize to daemon), False to exit."""
     if close_action != "minimize_tray":
         return False
@@ -132,40 +154,6 @@ def handle_window_close(page, close_action: str) -> bool:
         return False
     debug("lifecycle", "GUI closing; daemon keeps winws running")
     return True
-
-
-def start_daemon_watchdog(page, *, interval: float = 2.0) -> None:
-    """Close the GUI when the background daemon is no longer reachable."""
-    import asyncio
-
-    from src.daemon.ipc import is_daemon_running
-
-    alive = True
-    prior_disconnect = page.on_disconnect
-
-    def on_disconnect(event) -> None:
-        nonlocal alive
-        alive = False
-        if prior_disconnect is not None:
-            prior_disconnect(event)
-
-    page.on_disconnect = on_disconnect
-
-    async def watch() -> None:
-        while alive:
-            await asyncio.sleep(interval)
-            if not alive:
-                return
-            if is_daemon_running():
-                continue
-            debug("lifecycle", "daemon lost; closing GUI")
-            try:
-                await page.window.destroy()
-            except (RuntimeError, AttributeError, OSError):
-                pass
-            return
-
-    page.run_task(watch)
 
 
 def launch_last_strategy_if_configured(*, from_daemon: bool = False) -> None:

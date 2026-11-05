@@ -7,7 +7,7 @@ services live there:
   the address that profile's server gives from abroad;
 * ``hosts`` — fixed ``address host`` pairs (Discord, YouTube, GitHub…).
 
-Tigo ships a snapshot in ``assets/hosts`` and keeps a fresher copy in the cache
+2Wings ships a snapshot in ``assets/hosts`` and keeps a fresher copy in the cache
 (``catalog_update.py``). Reading is read-only; the file is never modified.
 """
 
@@ -25,7 +25,7 @@ from src.core.paths import cache_dir, program_root
 SCHEMA_VERSION = "1"
 CATALOG_NAME = "hosts_catalog.sqlite3"
 DIRECT_PROFILE = "hosts"
-# Listed by zapretgui, not offered by Tigo: this server answers over DoH only.
+# Listed by zapretgui, not offered by 2Wings: this server answers over DoH only.
 HIDDEN_PROFILES = ("zapret_dns",)
 CATEGORY_TITLES = {"ai": "Нейросети", "other": "Сервисы", "direct": "Прямые записи"}
 

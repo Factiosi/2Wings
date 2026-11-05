@@ -12,8 +12,10 @@ import shutil
 import sys
 from pathlib import Path
 
-APP_NAME = "Tigo"
-LEGACY_APP_DATA_NAMES = ("Z1UI",)
+APP_NAME = "2Wings"
+# Newest first: the first folder found is the one migrated.
+LEGACY_APP_DATA_NAMES = ("Tigo", "Z1UI")
+APP_USER_MODEL_ID = "Factiosi.TwoWings"
 SERVICE_NAME = "zapret"
 REGISTRY_STRATEGY_VALUE = "zapret-discord-youtube"
 
@@ -44,32 +46,30 @@ ENGINE_EXE = "winws2.exe"
 LEGACY_ENGINE_EXE = "winws.exe"
 ENGINE_BIN_FILES = (ENGINE_EXE, "WinDivert.dll", "WinDivert64.sys", "cygwin1.dll")
 ENGINE_LUA_FILES = ("zapret-lib.lua", "zapret-antidpi.lua")
-TIGO_GITHUB_REPO = "Factiosi/Tigo"
-TIGO_RELEASE_API = "https://api.github.com/repos/Factiosi/Tigo/releases/latest"
-TIGO_RELEASE_PAGE = "https://github.com/Factiosi/Tigo/releases/latest"
+TWOWINGS_GITHUB_REPO = "Factiosi/2Wings"
+TWOWINGS_RELEASE_API = "https://api.github.com/repos/Factiosi/2Wings/releases/latest"
+TWOWINGS_RELEASE_PAGE = "https://github.com/Factiosi/2Wings/releases/latest"
 
 
 def _install_root_from_layout() -> Path | None:
     """Detect standalone install dir by bundled layout (works without sys.frozen)."""
     root = Path(sys.executable).resolve().parent
-    if (root / "Tigo.exe").exists() and (root / "flet_client" / "flet.exe").exists():
-        return root
-    if (root / "Tigo.exe").exists() and (root / "flet" / "flet.exe").exists():
+    if (root / "2Wings.exe").exists() and (root / "assets" / "icons" / "app.ico").exists():
         return root
     return None
 
 
 def is_packaged_app() -> bool:
-    """True for Nuitka/PyInstaller builds (Tigo.exe), not ``python run.py``."""
+    """True for Nuitka/PyInstaller builds (2Wings.exe), not ``python run.py``."""
     if _install_root_from_layout() is not None:
         return True
     if getattr(sys, "frozen", False) or getattr(sys, "__compiled__", False):
         return True
-    return Path(sys.executable).resolve().name.lower() in {"tigo.exe", "run.exe"}
+    return Path(sys.executable).resolve().name.lower() in {"2wings.exe", "run.exe"}
 
 
 def program_root() -> Path:
-    """Install directory (``Program Files\\Tigo`` when packaged, repo root in dev)."""
+    """Install directory (``Program Files\\2Wings`` when packaged, repo root in dev)."""
     install = _install_root_from_layout()
     if install is not None:
         return install
@@ -89,70 +89,34 @@ def windowless_python_executable() -> str:
 
 
 def packaged_app_executable() -> Path | None:
-    """Tigo.exe for spawning child processes in standalone builds."""
+    """2Wings.exe for spawning child processes in standalone builds."""
     install = _install_root_from_layout()
     if install is not None:
-        return (install / "Tigo.exe").resolve()
+        return (install / "2Wings.exe").resolve()
     exe = Path(sys.executable).resolve()
-    if exe.name.lower() in {"tigo.exe", "run.exe"} and exe.is_file():
+    if exe.name.lower() in {"2wings.exe", "run.exe"} and exe.is_file():
         return exe
-    bundled = program_root() / "Tigo.exe"
+    bundled = program_root() / "2Wings.exe"
     if bundled.is_file():
         return bundled.resolve()
     return None
 
 
-def frozen_flet_view_dir() -> Path | None:
-    """Bundled Flet desktop client next to the exe (Nuitka standalone)."""
-    if not is_packaged_app():
-        return None
-    root = program_root()
-    for name in ("flet_client", "flet"):
-        flet_view = root / name
-        if (flet_view / "flet.exe").exists():
-            return flet_view
-    return None
-
-
-def configure_frozen_flet_desktop() -> None:
-    """Point Flet at bundled desktop client and set Windows shell identity."""
-    if sys.platform == "win32":
-        os.environ.setdefault("FLET_APP_USER_MODEL_ID", "Factiosi.Tigo")
-    flet_view = frozen_flet_view_dir()
-    if flet_view is not None:
-        os.environ.setdefault("FLET_VIEW_PATH", str(flet_view))
-
-
 def frozen_subprocess_env() -> dict[str, str]:
-    """Environment for child Tigo.exe processes in standalone builds."""
-    env = os.environ.copy()
-    if sys.platform == "win32":
-        env.setdefault("FLET_APP_USER_MODEL_ID", "Factiosi.Tigo")
-    flet_view = frozen_flet_view_dir()
-    if flet_view is not None:
-        env["FLET_VIEW_PATH"] = str(flet_view)
-    return env
+    """Environment for child 2Wings.exe processes in standalone builds."""
+    return os.environ.copy()
 
 
 def verify_frozen_layout() -> None:
-    """Fail fast when the user copied only Tigo.exe without bundled folders."""
+    """Fail fast when the user copied only 2Wings.exe without bundled folders."""
     if not is_packaged_app():
         return
-    root = program_root()
-    missing: list[str] = []
-    if not (root / "flet_client" / "flet.exe").exists() and not (
-        root / "flet" / "flet.exe"
-    ).exists():
-        missing.append("flet_client\\flet.exe")
-    if not (root / "assets" / "icons" / "app.ico").exists():
-        missing.append("assets\\icons\\")
-    if not missing:
+    if (program_root() / "assets" / "icons" / "app.ico").exists():
         return
     text = (
-        "Неполная установка Tigo.\n\n"
-        "Рядом с Tigo.exe должны лежать папки flet_client\\ и assets\\icons\\ "
-        "(вся папка dist\\Tigo\\, а не один exe-файл).\n\n"
-        f"Не найдено: {', '.join(missing)}"
+        "Неполная установка 2Wings.\n\n"
+        "Рядом с 2Wings.exe должна лежать папка assets\\icons\\ "
+        "(вся папка dist\\2Wings\\, а не один exe-файл)."
     )
     try:
         import ctypes
@@ -242,7 +206,7 @@ def winws2_writable_dir() -> Path:
 
 
 def tls_watch_script() -> Path:
-    return program_root() / "assets" / "lua" / "tigo-tls-watch.lua"
+    return program_root() / "assets" / "lua" / "twowings-tls-watch.lua"
 
 
 def test_results_cache_path() -> Path:
@@ -496,10 +460,21 @@ def migrate_legacy_layout() -> None:
             return
 
 
-def _migrate_legacy_app_data() -> None:
-    """Copy Roaming data from pre-rename folders (e.g. Z1UI → Tigo)."""
+def remove_legacy_updater() -> None:
+    """Copy of the previous updater; busy on the first start after the update, gone by the next."""
+    base = os.environ.get("LOCALAPPDATA")
+    if base:
+        shutil.rmtree(Path(base) / "Tigo", ignore_errors=True)
+
+
+def migrate_legacy_app_data() -> None:
+    """Copy Roaming data from pre-rename folders (Tigo → 2Wings).
+
+    Runs before anything else touches the data folder. Settings decide whether the
+    copy is due: the folder itself may already exist with nothing but a log in it.
+    """
     new_root = default_app_data_root()
-    if new_root.exists() and any(new_root.iterdir()):
+    if (new_root / "settings.json").exists():
         return
     base = os.environ.get("APPDATA")
     if not base:
@@ -524,7 +499,7 @@ def _migrate_legacy_app_data() -> None:
 
 
 def ensure_layout() -> None:
-    _migrate_legacy_app_data()
+    migrate_legacy_app_data()
     root = app_data_root()
     for path in (
         root,

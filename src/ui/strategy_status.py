@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import flet as ft
+from PySide6.QtWidgets import QWidget
 
 from src.modules.strategy_testing import results as tr
-from src.ui.components import status_pill
+from src.ui.components import status_badge
 
 
 def strategy_status(strategy_id: str) -> tuple[str, str]:
@@ -13,7 +13,7 @@ def strategy_status(strategy_id: str) -> tuple[str, str]:
     if not item:
         return "offline", "Не протестирована"
     mapping = {
-        "full": ("active", "Полностью работает (лучший выбор)"),
+        "full": ("active", "Полностью работает"),
         "partial": ("expiring", "Частично работает"),
         "failed": ("error", "Не работает"),
         "unknown": ("error", "Неизвестно"),
@@ -35,17 +35,6 @@ def strategy_actions_disabled(
     )
 
 
-def strategy_status_pill(strategy_id: str, *, compact: bool = False) -> ft.Control:
+def strategy_badge(strategy_id: str, parent: QWidget | None = None) -> QWidget:
     key, label = strategy_status(strategy_id)
-    if compact:
-        compact_labels = {
-            "Полностью работает (лучший выбор)": "Работает",
-            "Частично работает": "Частично",
-            "Не протестирована": "Нет теста",
-            "Проверяется": "Проверяется",
-            "Не работает": "Не работает",
-            "Неизвестно": "Неизвестно",
-        }
-        label = compact_labels.get(label, label)
-    return status_pill(key, label, dense=compact)
-
+    return status_badge(key, label, parent)

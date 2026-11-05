@@ -34,7 +34,7 @@ def _client() -> httpx.Client:
     return httpx.Client(
         timeout=httpx.Timeout(30.0, connect=10.0),
         headers={
-            "User-Agent": "Tigo",
+            "User-Agent": "2Wings",
             "Cache-Control": "no-cache",
         },
         follow_redirects=True,

@@ -1,4 +1,4 @@
-"""Файл, которым новая Tigo после обновления говорит TigoUpdate «я запущена»."""
+"""Файл, которым новая 2Wings после обновления говорит TwoWingsUpdate «я запущена»."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
-"""Точка входа TigoUpdate.exe.
+"""Точка входа TwoWingsUpdate.exe.
 
-TigoUpdate.exe --version 1.5.2 --from 1.5.1 --installer-url URL --checksum-url URL
+TwoWingsUpdate.exe --version 1.5.2 --from 1.5.1 --installer-url URL --checksum-url URL
                --work-dir DIR --done-file FILE
 """
 
@@ -14,7 +14,7 @@ from src.update_splash.worker import Job, Worker
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="TigoUpdate")
+    parser = argparse.ArgumentParser(prog="TwoWingsUpdate")
     parser.add_argument("--version", required=True)
     parser.add_argument("--from", dest="from_version", default="")
     parser.add_argument("--installer-url", required=True)

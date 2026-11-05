@@ -197,12 +197,12 @@ def restore_default() -> tuple[bool, str]:
 def restore_backup() -> tuple[bool, str]:
     backup = backup_path()
     if not backup.exists():
-        return False, "Резервной копии нет: Tigo ещё не менял hosts."
+        return False, "Резервной копии нет: 2Wings ещё не менял hosts."
     ok, error = _write(decode(backup.read_bytes()), "restored hosts backup")
     if not ok:
         return False, error
     _forget_services()
-    return True, "Файл hosts восстановлен из копии, снятой до первого изменения Tigo."
+    return True, "Файл hosts восстановлен из копии, снятой до первого изменения 2Wings."
 
 
 def _forget_services() -> None:

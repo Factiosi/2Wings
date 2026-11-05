@@ -9,7 +9,7 @@ from typing import Callable
 from src.core.events import emit
 from src.core.debug_log import debug, info as log_info
 from src.core.paths import runtime_installed, staging_dir
-from src.core.settings import get_settings, save_settings
+from src.core.settings import get_settings
 from src.kernel.process_probe import is_canonical_winws_running
 from src.kernel.public import get_effective_runtime_status
 from src.modules.filters.game_filter import ensure_game_filter_synced
@@ -63,7 +63,7 @@ def ensure_runtime_installed(*, allow_update: bool = False) -> ApplyResult:
     """Install the mandatory winws2 engine independently from strategy settings.
 
     With ``allow_update`` a newer zapret2 release replaces the installed one,
-    but only while Tigo's winws2 is not running (its files are locked then).
+    but only while 2Wings's winws2 is not running (its files are locked then).
     """
     release = None
     if runtime_installed():

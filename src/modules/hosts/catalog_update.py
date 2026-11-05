@@ -2,9 +2,9 @@
 
 zapretgui publishes ``update-manifest.json`` with every release; it lists each
 file with its SHA-256. Files sit in a content-addressed store as
-``<sha256>.zst``. Tigo takes the catalog entry from the newest manifest,
+``<sha256>.zst``. 2Wings takes the catalog entry from the newest manifest,
 downloads that blob, checks the hash and keeps the file only if it is newer
-than the catalog Tigo already has.
+than the catalog 2Wings already has.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ CHECK_INTERVAL_SECONDS = 6 * 3600
 
 
 def _client() -> httpx.Client:
-    return httpx.Client(timeout=httpx.Timeout(30.0, connect=10.0), headers={"User-Agent": "Tigo"}, follow_redirects=True)
+    return httpx.Client(timeout=httpx.Timeout(30.0, connect=10.0), headers={"User-Agent": "2Wings"}, follow_redirects=True)
 
 
 def _latest_catalog_sha256(client: httpx.Client) -> str:

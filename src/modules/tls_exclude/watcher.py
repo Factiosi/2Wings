@@ -1,4 +1,4 @@
-"""Move tigo-tls-watch.lua reports into the user's exclude lists.
+"""Move twowings-tls-watch.lua reports into the user's exclude lists.
 
 winws2 appends lines to ``tls-alerts.txt`` in its writable directory; the
 daemon takes the file every couple of seconds and writes new domains to
@@ -24,7 +24,7 @@ ALERTS_FILE = "tls-alerts.txt"
 DOMAIN_LIST = "list-exclude-user.txt"
 IP_LIST = "ipset-exclude-user.txt"
 POLL_SECONDS = 2.0
-MARK = "# Tigo: сервер отверг TLS-рукопожатие после обхода"
+MARK = "# 2Wings: сервер отверг TLS-рукопожатие после обхода"
 _DOMAIN = re.compile(r"^(?=.{1,253}$)([a-z0-9-]{1,63}\.)+[a-z0-9-]{2,63}$")
 
 
@@ -150,5 +150,5 @@ def _loop(stop: threading.Event) -> None:
 def start_watcher() -> threading.Event:
     """Daemon only. Returns the event that stops the watcher."""
     stop = threading.Event()
-    threading.Thread(target=_loop, args=(stop,), daemon=True, name="tigo-tls-exclude").start()
+    threading.Thread(target=_loop, args=(stop,), daemon=True, name="twowings-tls-exclude").start()
     return stop

@@ -1,4 +1,4 @@
-# Build Tigo standalone with Nuitka.
+# Build 2Wings standalone with Nuitka.
 $ErrorActionPreference = "Stop"
 
 $Repo = Split-Path -Parent $PSScriptRoot
@@ -6,13 +6,13 @@ $Py = Join-Path $Repo ".venv\Scripts\python.exe"
 if (-not (Test-Path $Py)) { $Py = "python" }
 
 $DistRoot = Join-Path $Repo "dist"
-$OutDir = Join-Path $DistRoot "Tigo"
+$OutDir = Join-Path $DistRoot "2Wings"
 $VersionFile = Join-Path $Repo "src\core\version.py"
 $Version = "1.0.0.0"
 if (Test-Path $VersionFile) {
     $match = Select-String -Path $VersionFile -Pattern '__version__\s*=\s*"([^"]+)"'
     if ($match) {
-        $Version = ($match.Matches[0].Groups[1].Value + ".0")
+        $Version = (($match.Matches[0].Groups[1].Value -replace "-.*$", "") + ".0")
     }
 }
 
@@ -25,37 +25,38 @@ if (-not (Test-Path $icon)) {
     Pop-Location
 }
 
-$fletVersion = & $Py -c "import flet; print(flet.version.flet_version)"
-$fletCache = Join-Path $env:USERPROFILE ".flet\client\flet-desktop-full-$fletVersion"
-$fletExe = Join-Path $fletCache "flet\flet.exe"
-if (-not (Test-Path $fletExe)) {
-    throw "Flet desktop client not found at $fletExe. Run 'python run.py' once to download it."
+# The full PySide6 package would drag WebEngine into the build: see requirements-ui.txt.
+& $Py -c "import importlib.util, sys; sys.exit(1 if importlib.util.find_spec('PySide6.QtWebEngineCore') else 0)"
+if ($LASTEXITCODE -ne 0) {
+    throw "Full PySide6 is installed. Keep only PySide6-Essentials: docs\BUILD.md."
 }
 
-Write-Host "Building Tigo $Version with Nuitka..."
+Write-Host "Building 2Wings $Version with Nuitka..."
 if (Test-Path $OutDir) { Remove-Item -Recurse -Force $OutDir }
 New-Item -ItemType Directory -Force -Path $DistRoot | Out-Null
 
 $buildArgs = @(
     "-m", "nuitka",
     "--standalone",
+    "--mingw64",
     "--assume-yes-for-downloads",
+    "--enable-plugin=pyside6",
+    "--noinclude-qt-translations",
     "--output-dir=$DistRoot",
-    "--output-filename=Tigo.exe",
+    "--output-filename=2Wings.exe",
     "--windows-icon-from-ico=$icon",
     "--windows-console-mode=disable",
     "--windows-uac-admin",
-    "--product-name=Tigo",
+    "--product-name=2Wings",
     "--file-version=$Version",
-    "--company-name=Tigo",
+    "--company-name=2Wings",
     "--include-data-dir=$(Join-Path $Repo 'assets\icons')=assets/icons",
-    "--include-data-dir=$(Join-Path $Repo 'assets\fonts')=assets/fonts",
     "--include-data-dir=$(Join-Path $Repo 'assets\hosts')=assets/hosts",
     "--include-data-dir=$(Join-Path $Repo 'assets\lua')=assets/lua",
     "--include-package=src",
-    "--include-package=flet",
-    "--include-package-data=flet",
-    "--include-package=flet_desktop",
+    "--include-package=qfluentwidgets",
+    "--include-package-data=qfluentwidgets",
+    "--include-package=qframelesswindow",
     "--include-package=httpx",
     "--include-package=httpcore",
     "--include-package=anyio",
@@ -89,15 +90,11 @@ if (-not (Test-Path $builtDir)) { throw "Nuitka output directory not found in di
 if (Test-Path $OutDir) { Remove-Item -Recurse -Force $OutDir }
 Rename-Item $builtDir $OutDir
 
-$exe = Join-Path $OutDir "Tigo.exe"
+$exe = Join-Path $OutDir "2Wings.exe"
 if (-not (Test-Path $exe)) {
     $legacy = Join-Path $OutDir "run.exe"
-    if (Test-Path $legacy) { Rename-Item $legacy "Tigo.exe" }
+    if (Test-Path $legacy) { Rename-Item $legacy "2Wings.exe" }
 }
-
-$fletDest = Join-Path $OutDir "flet_client"
-New-Item -ItemType Directory -Force -Path $fletDest | Out-Null
-Copy-Item -Path (Join-Path $fletCache "flet\*") -Destination $fletDest -Recurse -Force
 
 foreach ($intermediate in @("run.build", "run.onefile-build")) {
     $path = Join-Path $DistRoot $intermediate
@@ -106,11 +103,11 @@ foreach ($intermediate in @("run.build", "run.onefile-build")) {
     }
 }
 
-$UpdaterSource = Join-Path $Repo "scripts\release_assets\TigoUpdate"
-if (-not (Test-Path (Join-Path $UpdaterSource "TigoUpdate.exe"))) {
-    Write-Host "TigoUpdate is not built yet, building..."
+$UpdaterSource = Join-Path $Repo "scripts\release_assets\TwoWingsUpdate"
+if (-not (Test-Path (Join-Path $UpdaterSource "TwoWingsUpdate.exe"))) {
+    Write-Host "TwoWingsUpdate is not built yet, building..."
     & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build_update_splash.ps1")
-    if ($LASTEXITCODE -ne 0) { throw "TigoUpdate build failed with exit code $LASTEXITCODE" }
+    if ($LASTEXITCODE -ne 0) { throw "TwoWingsUpdate build failed with exit code $LASTEXITCODE" }
 }
 $UpdaterDest = Join-Path $OutDir "updater"
 if (Test-Path $UpdaterDest) { Remove-Item -Recurse -Force $UpdaterDest }
@@ -118,6 +115,5 @@ Copy-Item -Path $UpdaterSource -Destination $UpdaterDest -Recurse -Force
 
 Write-Host ""
 Write-Host "Build complete: $OutDir"
-Write-Host "  Tigo.exe"
-Write-Host "  updater\TigoUpdate.exe (from scripts\release_assets\TigoUpdate\)"
-Write-Host "  flet_client\flet.exe"
+Write-Host "  2Wings.exe"
+Write-Host "  updater\TwoWingsUpdate.exe (from scripts\release_assets\TwoWingsUpdate\)"

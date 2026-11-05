@@ -24,11 +24,11 @@ class AppUpdateTests(unittest.TestCase):
         response.json.return_value = {
             "assets": [
                 {
-                    "name": "Tigo-Setup-9.9.9.exe",
+                    "name": "2Wings-Setup-9.9.9.exe",
                     "browser_download_url": "https://example.test/setup.exe",
                 },
                 {
-                    "name": "Tigo-Setup-9.9.9.exe.sha256",
+                    "name": "2Wings-Setup-9.9.9.exe.sha256",
                     "browser_download_url": "https://example.test/setup.sha256",
                 },
             ]
@@ -47,7 +47,7 @@ class AppUpdateTests(unittest.TestCase):
             "9.9.9",
             "https://example.test/setup.exe",
             "https://example.test/setup.sha256",
-            "Tigo-Setup-9.9.9.exe",
+            "2Wings-Setup-9.9.9.exe",
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -72,7 +72,7 @@ class AppUpdateTests(unittest.TestCase):
             "9.9.9",
             "https://example.test/setup.exe",
             "https://example.test/setup.sha256",
-            "Tigo-Setup-9.9.9.exe",
+            "2Wings-Setup-9.9.9.exe",
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -98,7 +98,7 @@ class AppUpdateTests(unittest.TestCase):
             "9.9.9",
             "https://example.test/setup.exe",
             "https://example.test/setup.sha256",
-            "Tigo-Setup-9.9.9.exe",
+            "2Wings-Setup-9.9.9.exe",
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -116,7 +116,7 @@ class AppUpdateTests(unittest.TestCase):
             ):
                 installer = download_verified_installer(update)
 
-            self.assertEqual(installer.name, "Tigo-Setup-9.9.9.exe.part")
+            self.assertEqual(installer.name, "2Wings-Setup-9.9.9.exe.part")
             self.assertEqual(installer.read_bytes(), payload)
 
     def test_download_reuses_verified_installer_without_redownload(self) -> None:
@@ -126,7 +126,7 @@ class AppUpdateTests(unittest.TestCase):
             "9.9.9",
             "https://example.test/setup.exe",
             "https://example.test/setup.sha256",
-            "Tigo-Setup-9.9.9.exe",
+            "2Wings-Setup-9.9.9.exe",
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -159,7 +159,7 @@ class AppUpdateTests(unittest.TestCase):
         self.assertIn("уже выполняется", message.lower())
 
     def test_installer_launch_uses_silent_update_flags(self) -> None:
-        installer = Path("Tigo-Setup-9.9.9.exe")
+        installer = Path("2Wings-Setup-9.9.9.exe")
         with (
             patch("src.modules.updates.app.is_packaged_app", return_value=True),
             patch("src.modules.updates.app.subprocess.Popen") as popen,
@@ -168,7 +168,7 @@ class AppUpdateTests(unittest.TestCase):
 
         args = popen.call_args.args[0]
         self.assertIn("/VERYSILENT", args)
-        self.assertIn("/TIGORELAUNCH=1", args)
+        self.assertIn("/TWOWINGSRELAUNCH=1", args)
 
 
 if __name__ == "__main__":

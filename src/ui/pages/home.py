@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
-import threading
-
-import flet as ft
+from PySide6.QtCore import Qt, QTimer
+from qfluentwidgets import PlainTextEdit, PrimaryPushButton, PushButton
 
 from src.core.debug_log import debug, error as log_error, info as log_info
 from src.core.paths import APP_NAME
@@ -26,15 +24,8 @@ from src.modules.strategies.repository import (
     has_flowseal_strategies,
     list_strategies,
 )
-from src.ui.theme import T
-from src.ui.components import (
-    block_section,
-    make_select,
-    pill_button,
-    scroll_page,
-    status_pill,
-    ui_text,
-)
+from src.ui.components import Lucide, Group, Page, Panel, StatusMark, caption, row, select_card
+from src.ui.dispatch import run_bg, ui_call
 from src.ui.filter_labels import (
     GAME_FILTER_OPTIONS,
     IPSET_FILTER_OPTIONS,
@@ -42,36 +33,62 @@ from src.ui.filter_labels import (
     ipset_filter_label,
 )
 from src.ui.notifications import show_toast
-from src.ui.strategy_status import strategy_status_pill
+from src.ui.strategy_status import strategy_badge, strategy_status
 
+POLL_MS = 2000
+RESYNC_MS = 500
+RESYNC_ATTEMPTS = 6
 CUSTOM_HINT = (
     "Здесь можно указать свою стратегию в формате winws1 или winws2. Пример: "
-    '--filter-tcp=2053,2083,2087,2096,8443 --hostlist-domains=discord.media. '
+    "--filter-tcp=2053,2083,2087,2096,8443 --hostlist-domains=discord.media. "
     'Листы — полным путём: --hostlist="C:\\Users\\User\\Documents\\zapret\\list-general.txt", '
-    'или пользовательские листы Tigo: --hostlist="%LISTS%list-general-user.txt" '
+    f'или пользовательские листы {APP_NAME}: --hostlist="%LISTS%list-general-user.txt" '
     "(также list-exclude-user.txt, ipset-exclude-user.txt). "
     'Фейки Flowseal — "%BIN%имя.bin", порты игрового фильтра — %GameFilterTCP% и %GameFilterUDP%.'
 )
 
 
-class HomePage:
-    def __init__(
-        self,
-        page: ft.Page,
-        *,
-        on_strategies_available=None,
-    ) -> None:
-        self.page = page
+class HomePage(Page):
+    title = "Главный экран"
+
+    def __init__(self, *, on_strategies_available=None, parent=None) -> None:
+        super().__init__(parent)
         self._on_strategies_available = on_strategies_available
         self._busy = False
-        self._status_row = ft.Row(spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         self._selected_strategy_id = get_settings().selected_strategy or ""
-        self._custom_args = get_settings().custom_strategy_args or ""
-        self._polling = False
         self._last_running: bool | None = None
         self._last_phase: RuntimePhase | None = None
-        self._start_btn: ft.Control | None = None
-        self._stop_btn: ft.Control | None = None
+        self._fetching = False
+        self._alive = True
+        self._last_status = None
+        self._status = StatusMark()
+        self._start_btn = PrimaryPushButton(Lucide("play"), "Запуск")
+        self._stop_btn = PushButton(Lucide("square"), "Остановка")
+        self._start_btn.clicked.connect(self._start)
+        self._stop_btn.clicked.connect(self._stop)
+        self._build()
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self._poll)
+        self._poll_timer.start(POLL_MS)
+        self._strategies_timer = QTimer(self)
+        self._strategies_timer.timeout.connect(self._check_strategies)
+        self._resync_left = 0
+        self._resync_timer = QTimer(self)
+        self._resync_timer.setInterval(RESYNC_MS)
+        self._resync_timer.timeout.connect(self._resync_tick)
+        runtime_state.subscribe(self._on_runtime_event)
+        log_info("bootstrap", f"{APP_NAME} готов к работе")
+        settings = get_settings()
+        if settings.strategy_source == "flowseal" and not has_flowseal_strategies():
+            self._strategies_timer.start(POLL_MS)
+        self._poll()
+
+    def stop(self) -> None:
+        self._alive = False
+        self._poll_timer.stop()
+        self._strategies_timer.stop()
+        self._resync_timer.stop()
+        runtime_state.unsubscribe(self._on_runtime_event)
 
     def _sync_selected_strategy(self) -> None:
         settings = get_settings()
@@ -88,263 +105,195 @@ class HomePage:
             settings.selected_strategy = selected or None
             save_settings(settings)
 
-    def build(self) -> ft.Control:
+    def _build(self) -> None:
         bootstrap_user_lists()
         settings = get_settings()
-        is_custom = settings.strategy_source == "custom"
         self._sync_selected_strategy()
+        launch = Panel(self._status, row(self._start_btn, self._stop_btn))
+        self.add(Group("Запуск zapret", launch))
 
-        self._start_btn = pill_button("Запуск", primary=True, on_click=self._start)
-        self._stop_btn = pill_button("Остановка", on_click=self._stop)
+        if settings.strategy_source == "custom":
+            field = PlainTextEdit()
+            field.setPlainText(settings.custom_strategy_args or "")
+            field.setMinimumHeight(220)
+            field.setStyleSheet("font-family: 'Cascadia Mono', Consolas, monospace;")
+            field.textChanged.connect(lambda: self._on_custom_args_change(field.toPlainText()))
+            self.add(Group("Своя стратегия", Panel(caption(CUSTOM_HINT), field)))
+            return
 
-        launch_section = block_section(
-            "Запуск zapret",
-            ft.Row(
-                [
-                    ui_text("Статус", color=T.TEXT_MUTED),
-                    self._status_row,
-                ],
-                spacing=8,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                wrap=True,
+        strategies = list_strategies()
+        options = (
+            [(s.id, s.display_name) for s in strategies]
+            if strategies
+            else [("", NO_FLOWSEAL_STRATEGIES_LABEL)]
+        )
+        strategy_card = select_card(
+            "Стратегия",
+            options,
+            self._selected_strategy_id if strategies else "",
+            self._on_strategy_change if strategies else None,
+            icon=Lucide("waypoints"),
+        )
+        strategy_card.select.setMinimumWidth(240)
+        strategy_card.select.badges = {s.id: strategy_status(s.id) for s in strategies}
+        self._strategy_card = strategy_card
+        self._current_badge = None
+        self._show_current_badge()
+        self.add(
+            Group("Стратегии", strategy_card),
+            Group(
+                "Настройки фильтров",
+                select_card(
+                    "Game filter",
+                    GAME_FILTER_OPTIONS,
+                    settings.game_filter,
+                    self._on_game_filter_change,
+                    icon=Lucide("gamepad-2"),
+                ),
+                select_card(
+                    "IPset filter",
+                    IPSET_FILTER_OPTIONS,
+                    settings.ipset_filter,
+                    self._on_ipset_change,
+                    icon=Lucide("filter"),
+                ),
             ),
-            ft.Row([self._start_btn, self._stop_btn], wrap=True, spacing=8),
         )
 
-        sections: list[ft.Control] = [launch_section]
+    def _show_current_badge(self) -> None:
+        """Status of the chosen strategy beside the list, as on the strategy test page."""
+        if self._current_badge is not None:
+            self._current_badge.setParent(None)
+            self._current_badge.deleteLater()
+            self._current_badge = None
+        if self._selected_strategy_id:
+            self._current_badge = strategy_badge(self._selected_strategy_id, self._strategy_card)
+            self._strategy_card.texts.addSpacing(4) if self._strategy_card.texts.count() < 3 else None
+            self._strategy_card.texts.addWidget(self._current_badge, 0, Qt.AlignmentFlag.AlignLeft)
 
-        if is_custom:
-            custom_field = ft.TextField(
-                value=self._custom_args,
-                multiline=True,
-                min_lines=10,
-                max_lines=16,
-                on_change=self._on_custom_args_change,
-                border_radius=T.RADIUS_L,
-                filled=True,
-                bgcolor=T.SURFACE,
-                border_color=T.BORDER,
-                focused_border_color=T.FOCUS,
-                focused_border_width=2,
-                cursor_color=T.BUTTON,
-                text_style=ft.TextStyle(font_family=T.FONT_MONO, size=T.FONT_CAPTION),
-            )
-            sections.append(
-                block_section(
-                    "Своя стратегия",
-                    ui_text(CUSTOM_HINT, size=T.FONT_CAPTION, color=T.TEXT_MUTED),
-                    custom_field,
-                )
-            )
-        else:
-            strategies = list_strategies()
-            has_strategies = bool(strategies)
-            if not self._selected_strategy_id and strategies:
-                self._sync_selected_strategy()
+    # status --------------------------------------------------------------------
+    def _status_running(self, status) -> bool:
+        return status.running or status.phase == RuntimePhase.RUNNING
 
-            strategy_options = (
-                [(s.id, s.display_name) for s in strategies]
-                if has_strategies
-                else [("", NO_FLOWSEAL_STRATEGIES_LABEL)]
-            )
-            strategy_select = make_select(
-                self.page,
-                "Стратегия",
-                strategy_options,
-                self._selected_strategy_id if has_strategies else "",
-                on_change=self._on_strategy_change if has_strategies else None,
-                disabled=not has_strategies,
-                option_trailing=lambda strategy_id: strategy_status_pill(strategy_id)
-                if strategy_id
-                else None,
-            )
-            game_select = make_select(
-                self.page,
-                "Game filter",
-                GAME_FILTER_OPTIONS,
-                settings.game_filter,
-                on_change=self._on_game_filter_change,
-            )
-            ipset_select = make_select(
-                self.page,
-                "IPset filter",
-                IPSET_FILTER_OPTIONS,
-                settings.ipset_filter,
-                on_change=self._on_ipset_change,
-            )
-            sections.extend(
-                [
-                    block_section("Стратегии", strategy_select),
-                    block_section("Настройки фильтров", game_select, ipset_select),
-                ]
-            )
-
-        content = scroll_page(*sections, page=self.page)
-        self._refresh_status()
-        self._start_status_polling()
-        return content
-
-    def _update_action_buttons(self) -> None:
-        if not self._start_btn or not self._stop_btn:
+    def _update_action_buttons(self, status=None) -> None:
+        status = status or self._last_status
+        if self._busy or status is None:
+            self._start_btn.setEnabled(False)
+            self._stop_btn.setEnabled(False)
             return
-        if self._busy:
-            self._start_btn.disabled = True
-            self._stop_btn.disabled = True
-            return
-        status = self._resolve_status()
         starting = status.phase == RuntimePhase.STARTING
         stopping = status.phase == RuntimePhase.STOPPING
         running = self._status_running(status)
-        settings = get_settings()
-        no_flowseal = settings.strategy_source == "flowseal" and not has_flowseal_strategies()
-        self._start_btn.disabled = self._busy or starting or stopping or running or no_flowseal
-        self._stop_btn.disabled = self._busy or stopping or (not running and not stopping)
+        no_flowseal = get_settings().strategy_source == "flowseal" and not has_flowseal_strategies()
+        self._start_btn.setEnabled(not (starting or stopping or running or no_flowseal))
+        self._stop_btn.setEnabled(running and not stopping)
 
-    def on_mounted(self) -> None:
-        runtime_state.subscribe(self._on_runtime_event)
-        log_info("bootstrap", f"{APP_NAME} готов к работе")
-        self._start_strategies_poll()
-
-    def _start_strategies_poll(self) -> None:
-        settings = get_settings()
-        if settings.strategy_source != "flowseal" or has_flowseal_strategies():
+    def _poll(self, *, force: bool = False) -> None:
+        """Ask for the status off the UI thread: the daemon socket may stall for seconds."""
+        if self._fetching or (self._busy and not force):
             return
+        self._fetching = True
 
-        async def poll() -> None:
-            while self._polling and not has_flowseal_strategies():
-                await asyncio.sleep(2.0)
-            if self._polling and has_flowseal_strategies() and self._on_strategies_available:
-                try:
-                    self.page.run_thread(self._on_strategies_available)
-                except AttributeError:
-                    self._on_strategies_available()
+        def done(status) -> None:
+            self._fetching = False
+            if self._alive and status is not None:
+                self._paint_status(status, only_if_changed=not force)
 
-        self.page.run_task(poll)
-
-    def stop(self) -> None:
-        self._polling = False
-        runtime_state.unsubscribe(self._on_runtime_event)
-
-    def _start_status_polling(self) -> None:
-        self._polling = True
-
-        async def poll() -> None:
-            while self._polling:
-                self._refresh_status(only_if_changed=True)
-                await asyncio.sleep(2.0)
-
-        self.page.run_task(poll)
+        run_bg(get_effective_runtime_status, done, name="twowings-home-status", on_error=lambda _exc: None)
 
     def _on_runtime_event(self) -> None:
-        self._refresh_status(only_if_changed=True)
-        try:
-            self.page.update()
-        except RuntimeError:
-            pass
-
-    def _resolve_status(self):
-        return get_effective_runtime_status()
+        ui_call(lambda: self._poll() if self._alive else None)
 
     def _invalidate_status_cache(self) -> None:
         self._last_running = None
         self._last_phase = None
 
-    def _schedule_status_resync(self, *, attempts: int = 6, interval: float = 0.5) -> None:
-        async def resync() -> None:
-            for _ in range(attempts):
-                self._refresh_status()
-                await asyncio.sleep(interval)
+    def _schedule_status_resync(self) -> None:
+        self._resync_left = RESYNC_ATTEMPTS
+        self._resync_timer.start()
 
-        self.page.run_task(resync)
+    def _resync_tick(self) -> None:
+        self._resync_left -= 1
+        if self._resync_left <= 0:
+            self._resync_timer.stop()
+        self._poll(force=True)
 
-    def _status_running(self, status) -> bool:
-        return status.running or status.phase == RuntimePhase.RUNNING
-
-    def _refresh_status(self, *, only_if_changed: bool = False) -> None:
-        if self._busy and only_if_changed:
-            return
-        status = self._resolve_status()
+    def _paint_status(self, status, *, only_if_changed: bool) -> None:
+        self._last_status = status
         running = self._status_running(status)
-        if (
-            only_if_changed
-            and self._last_running == running
-            and self._last_phase == status.phase
-        ):
-            self._update_action_buttons()
+        if only_if_changed and self._last_running == running and self._last_phase == status.phase:
+            self._update_action_buttons(status)
             return
         self._last_running = running
         self._last_phase = status.phase
         if running:
             label = f"zapret запущен · {status.strategy_name}" if status.strategy_name else "zapret запущен"
-            pill_key = "active"
+            kind = "active"
         elif status.phase == RuntimePhase.STARTING:
-            label = "запуск zapret…"
-            pill_key = "connecting"
+            label, kind = "запуск zapret…", "connecting"
         elif status.phase == RuntimePhase.STOPPING:
-            label = "остановка zapret…"
-            pill_key = "connecting"
+            label, kind = "остановка zapret…", "connecting"
         elif status.phase == RuntimePhase.FAILED:
-            label = status.error or "ошибка запуска zapret"
-            pill_key = "error"
+            label, kind = status.error or "ошибка запуска zapret", "error"
         else:
-            label = "zapret не запущен"
-            pill_key = "offline"
-        self._status_row.controls = [status_pill(pill_key, label)]
+            label, kind = "zapret не запущен", "offline"
+        self._status.set_status(kind, label)
+        self._update_action_buttons(status)
+
+    def _show_transition_status(self, label: str) -> None:
+        self._invalidate_status_cache()
+        self._status.set_status("connecting", label)
         self._update_action_buttons()
-        self.page.update()
 
     def _show_message(self, message: str, *, error: bool = False) -> None:
         if error:
             log_error("ui", message)
         else:
             log_info("ui", message)
-        show_toast(self.page, message, kind="error" if error else "info")
+        show_toast(message, kind="error" if error else "info")
 
-    def _show_transition_status(self, label: str) -> None:
-        self._invalidate_status_cache()
-        self._status_row.controls = [status_pill("connecting", label)]
-        self._update_action_buttons()
-        self.page.update()
+    def _check_strategies(self) -> None:
+        if has_flowseal_strategies():
+            self._strategies_timer.stop()
+            if self._on_strategies_available:
+                self._on_strategies_available()
 
+    # actions -------------------------------------------------------------------
     def _run_bg(self, work, on_done) -> None:
         if self._busy:
             return
         self._busy = True
         self._update_action_buttons()
-        self.page.update()
 
-        def runner() -> None:
-            try:
-                result = work()
-            except Exception as exc:  # noqa: BLE001
-                result = (False, str(exc))
-
-            def finish() -> None:
-                self._busy = False
+        def finish(result) -> None:
+            self._busy = False
+            if self._alive:
                 on_done(result)
                 self._update_action_buttons()
 
-            try:
-                self.page.run_thread(finish)
-            except AttributeError:
-                finish()
+        run_bg(work, finish, name="twowings-home-action")
 
-        threading.Thread(target=runner, daemon=True).start()
+    def _report(self, result, fallback: str = "") -> None:
+        ok, msg = result
+        self._show_message(msg or fallback, error=not ok)
+        self._invalidate_status_cache()
+        self._poll(force=True)
+        self._schedule_status_resync()
 
     def _find_strategy(self) -> Strategy | None:
         self._sync_selected_strategy()
-        for strategy in list_strategies():
+        strategies = list_strategies()
+        for strategy in strategies:
             if strategy.id == self._selected_strategy_id:
                 return strategy
-        strategies = list_strategies()
         return strategies[0] if strategies else None
 
-    def _start(self, _: ft.ControlEvent) -> None:
+    def _start(self) -> None:
         if self._busy:
             return
         self._sync_selected_strategy()
         if not is_daemon_running():
-            self._show_message("Фоновый процесс Tigo не запущен", error=True)
+            self._show_message(f"Фоновый процесс {APP_NAME} не запущен", error=True)
             return
         status = get_effective_runtime_status()
         if status.running or status.phase == RuntimePhase.STARTING:
@@ -353,81 +302,40 @@ class HomePage:
 
         settings = get_settings()
         if settings.strategy_source == "custom":
-
-            def work():
-                return daemon_start()
-
-            def done(result):
-                ok, msg = result
-                self._show_message(msg, error=not ok)
-                self._invalidate_status_cache()
-                self._refresh_status()
-                self._schedule_status_resync()
-
             debug("ui", "start custom strategy")
-            self._run_bg(work, done)
+            self._run_bg(daemon_start, self._report)
             return
 
         strategy = self._find_strategy()
         if not strategy:
-            self._show_message(
-                "Стратегии отсутствуют. Проверьте обновления в настройках.",
-                error=True,
-            )
+            self._show_message("Стратегии отсутствуют. Проверьте обновления в настройках.", error=True)
             return
-
-        settings = get_settings()
         if settings.selected_strategy != strategy.id:
             settings.selected_strategy = strategy.id
             save_settings(settings)
-
         debug("ui", f"start zapret strategy={strategy.name}")
+        self._run_bg(lambda: daemon_start(strategy.id), self._report)
 
-        def work():
-            return daemon_start(strategy.id)
-
-        def done(result):
-            ok, msg = result
-            self._show_message(msg, error=not ok)
-            self._invalidate_status_cache()
-            self._refresh_status()
-            self._schedule_status_resync()
-
-        self._run_bg(work, done)
-
-    def _stop(self, _: ft.ControlEvent) -> None:
+    def _stop(self) -> None:
         if self._busy:
             return
         if not is_daemon_running():
-            self._show_message("Фоновый процесс Tigo не запущен", error=True)
+            self._show_message(f"Фоновый процесс {APP_NAME} не запущен", error=True)
             return
-        status = get_effective_runtime_status()
-        if not status.running:
+        if not get_effective_runtime_status().running:
             self._show_message("Zapret не запущен")
             return
-
         debug("ui", "stop zapret")
+        self._run_bg(daemon_stop, self._report)
 
-        def work():
-            return daemon_stop()
-
-        def done(result):
-            ok, msg = result
-            self._show_message(msg, error=not ok)
-            self._invalidate_status_cache()
-            self._refresh_status()
-            self._schedule_status_resync()
-
-        self._run_bg(work, done)
-
-    def _on_custom_args_change(self, e: ft.ControlEvent) -> None:
-        self._custom_args = e.control.value or ""
+    def _on_custom_args_change(self, text: str) -> None:
         settings = get_settings()
-        settings.custom_strategy_args = self._custom_args
+        settings.custom_strategy_args = text
         save_settings(settings)
 
     def _on_strategy_change(self, strategy_id: str) -> None:
         self._selected_strategy_id = strategy_id
+        self._show_current_badge()
         settings = get_settings()
         settings.selected_strategy = strategy_id
         save_settings(settings)
@@ -436,18 +344,17 @@ class HomePage:
         status = get_effective_runtime_status()
         if status.running or status.phase in {RuntimePhase.STARTING, RuntimePhase.STOPPING}:
             self._show_transition_status("перезапуск zapret…")
+            self._run_bg(
+                lambda: restart_if_running(strategy_id=strategy_id),
+                lambda result: self._report(result, f"Перезапущено: {name}"),
+            )
 
-            def work():
-                return restart_if_running(strategy_id=strategy_id)
-
-            def done(result):
-                ok, msg = result
-                self._show_message(msg or f"Перезапущено: {name}", error=not ok)
-                self._invalidate_status_cache()
-                self._refresh_status()
-                self._schedule_status_resync()
-
-            self._run_bg(work, done)
+    def _restart_after_filter(self, title: str, label: str) -> None:
+        if get_effective_runtime_status().running:
+            self._show_transition_status("перезапуск zapret…")
+            self._run_bg(restart_if_running, lambda result: self._report(result, f"{title}: {label}. Перезапущено."))
+        else:
+            self._show_message(f"{title}: {label}.")
 
     def _on_game_filter_change(self, mode: str) -> None:
         settings = get_settings()
@@ -455,23 +362,7 @@ class HomePage:
             self._show_message("Сначала установите версию flowseal", error=True)
             return
         apply_game_filter(settings.active_version, mode)  # type: ignore[arg-type]
-        label = game_filter_label(mode)
-        if get_effective_runtime_status().running:
-            self._show_transition_status("перезапуск zapret…")
-
-            def work():
-                return restart_if_running()
-
-            def done(result):
-                ok, msg = result
-                self._show_message(msg or f"Game filter: {label}. Перезапущено.", error=not ok)
-                self._invalidate_status_cache()
-                self._refresh_status()
-                self._schedule_status_resync()
-
-            self._run_bg(work, done)
-        else:
-            self._show_message(f"Game filter: {label}.")
+        self._restart_after_filter("Game filter", game_filter_label(mode))
 
     def _on_ipset_change(self, mode: str) -> None:
         settings = get_settings()
@@ -483,20 +374,4 @@ class HomePage:
         except FileNotFoundError as exc:
             self._show_message(str(exc), error=True)
             return
-        label = ipset_filter_label(mode)
-        if get_effective_runtime_status().running:
-            self._show_transition_status("перезапуск zapret…")
-
-            def work():
-                return restart_if_running()
-
-            def done(result):
-                ok, msg = result
-                self._show_message(msg or f"IPset filter: {label}. Перезапущено.", error=not ok)
-                self._invalidate_status_cache()
-                self._refresh_status()
-                self._schedule_status_resync()
-
-            self._run_bg(work, done)
-        else:
-            self._show_message(f"IPset filter: {label}.")
+        self._restart_after_filter("IPset filter", ipset_filter_label(mode))

@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Literal
 
 from src.core.paths import bootstrap_settings_path, default_app_data_root
-from src.ui.theme import PortalHue, ThemeMode
 
 _write_lock = threading.RLock()
 
+ThemeMode = Literal["auto", "dark", "light"]
 GameFilterMode = Literal["off", "all", "tcp", "udp"]
 IpsetFilterMode = Literal["loaded", "none", "any"]
 VersionRetention = Literal["all", "latest_only", "keep_previous"]
@@ -37,8 +37,7 @@ class AppSettings:
     auto_promote_updates: bool = True
     auto_check_app_updates_on_startup: bool = True
     auto_install_app_updates: bool = False
-    theme_mode: ThemeMode = "dark"
-    portal_hue: PortalHue = "blue"
+    theme_mode: ThemeMode = "auto"
     strategy_source: StrategySource = "flowseal"
     custom_strategy_args: str = ""
     autostart_enabled: bool = False
@@ -78,7 +77,7 @@ class AppSettings:
         # Settings written before advanced_mode existed belong to people used to
         # the full interface; only a fresh install starts in the simple one.
         data.setdefault("advanced_mode", True)
-        # Zapret DNS is gone from Tigo: services chosen with it move to the default profile.
+        # Zapret DNS is gone from 2Wings: services chosen with it move to the default profile.
         if data.get("hosts_profile") == RETIRED_HOSTS_PROFILE:
             data["hosts_profile"] = cls.hosts_profile
         if isinstance(data.get("hosts_services"), dict):

@@ -1,4 +1,4 @@
-"""Tigo icon paths and raster tray/window assets."""
+"""2Wings icon paths and raster tray/window assets."""
 
 from __future__ import annotations
 
@@ -28,18 +28,12 @@ def tray_icon_path(*, running: bool) -> Path:
     return fallback if fallback.exists() else path
 
 
-def tray_menu_icon_path(name: str) -> Path:
-    return icons_dir() / "menu" / f"{name}.png"
-
-
-def load_tray_menu_icon(name: str, *, size: int = 16) -> Image.Image | None:
-    path = tray_menu_icon_path(name)
+def load_tray_menu_icon(name: str, *, dark: bool, size: int) -> Image.Image | None:
+    """Lucide icon rendered by tools/generate_icons.mjs for the dark or light menu."""
+    path = icons_dir() / "menu" / f"{name}-{'dark' if dark else 'light'}.png"
     if not path.exists():
         return None
-    image = Image.open(path).convert("RGB")
-    if image.size != (size, size):
-        image = image.resize((size, size), Image.Resampling.LANCZOS)
-    return image
+    return Image.open(path).convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
 
 
 def load_tray_icon(*, running: bool, size: int = 64) -> Image.Image:
@@ -67,5 +61,4 @@ __all__ = [
     "load_tray_icon",
     "load_tray_menu_icon",
     "tray_icon_path",
-    "tray_menu_icon_path",
 ]

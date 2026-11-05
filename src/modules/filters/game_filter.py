@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.core.debug_log import debug
 from src.core.paths import utils_dir
-from src.core.settings import AppSettings, GameFilterMode, get_settings, save_settings
+from src.core.settings import GameFilterMode, get_settings, save_settings
 
 GAME_FILTER_PORTS = {
     "off": ("12", "12"),

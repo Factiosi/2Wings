@@ -1,4 +1,4 @@
-"""Windows singleton guard for the privileged Tigo daemon."""
+"""Windows singleton guard for the privileged 2Wings daemon."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import ctypes
 import sys
 from ctypes import wintypes
 
-_MUTEX_NAME = "Local\\Tigo.Daemon.v1"
+_MUTEX_NAME = "Local\\TwoWings.Daemon.v1"
 _ERROR_ALREADY_EXISTS = 183
 _handle: int | None = None
 

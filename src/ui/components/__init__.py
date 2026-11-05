@@ -1,994 +1,569 @@
-"""Factiosi UI helpers for Tigo."""
+"""Shared Fluent controls: pages, setting cards, selects and status marks."""
 
 from __future__ import annotations
 
-import asyncio
-import math
-from typing import Callable
+import os
+from collections.abc import Callable, Iterable, Sequence
+from functools import lru_cache
 
-import flet as ft
+from PySide6.QtCore import (
+    Property,
+    QAbstractAnimation,
+    QByteArray,
+    QEasingCurve,
+    QElapsedTimer,
+    QPropertyAnimation,
+    QRectF,
+    Qt,
+    QTimer,
+    QVariantAnimation,
+    Signal,
+)
+from PySide6.QtGui import QColor, QIcon, QPainter, QSurfaceFormat
+from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtWidgets import QAbstractButton, QApplication, QFrame, QHBoxLayout, QVBoxLayout, QWidget
+from qfluentwidgets import (
+    BodyLabel,
+    CaptionLabel,
+    ComboBox,
+    DotInfoBadge,
+    FluentIconBase,
+    IconWidget,
+    IndeterminateProgressRing,
+    InfoBadge,
+    InfoLevel,
+    LineEdit,
+    ScrollArea,
+    SimpleCardWidget,
+    StrongBodyLabel,
+    SwitchButton,
+    Theme,
+    TitleLabel,
+    setTheme,
+    isDarkTheme,
+    setThemeColor,
+)
+from qfluentwidgets.common.icon import SvgIconEngine
+from qfluentwidgets.components.widgets.combo_box import ComboBoxMenu
+from qfluentwidgets.components.widgets.menu import IndicatorMenuItemDelegate
+from qframelesswindow.utils import getSystemAccentColor
 
-from src.ui.theme import T
+from src.core.paths import program_root
 
-ANIM = ft.Animation(300, ft.AnimationCurve.EASE_IN_OUT)
-ANIM_FAST = ft.Animation(100, ft.AnimationCurve.EASE_OUT)
-MENU_IN = ft.Animation(200, ft.AnimationCurve.EASE_OUT)
-CHEVRON_ANIM = ft.Animation(200, ft.AnimationCurve.EASE_OUT)
-EXPAND_ANIM = ft.Animation(300, ft.AnimationCurve.EASE_IN_OUT)
+PAGE_MARGIN = 36
+ROW_GAP = 4
+GROUP_GAP = 24
 
-MENU_MAX_HEIGHT = 280
-MENU_ITEM_HEIGHT = 38
-MENU_EDGE_INSET = 4
-MENU_POPUP_VPAD = 8
-MENU_ITEM_RADIUS = 4  # панель меню 8 минус поле 4: вложенный радиус не спорит с внешним
-def lucide_icon(name: str, *, color: str, size: int = 18) -> ft.Image:
-    """Lucide icon from assets/icons/lucide (ISC); the stroke takes ``color``."""
-    return ft.Image(
-        src=f"/assets/icons/lucide/{name}.svg",
-        width=size,
-        height=size,
-        color=color,
-        color_blend_mode=ft.BlendMode.SRC_IN,
-    )
+# WinUI status colors: (light theme, dark theme).
+COLOR_SUCCESS = ("#0f7b0f", "#6ccb5f")
+COLOR_WARNING = ("#9d5d00", "#fce100")
+COLOR_ERROR = ("#c42b1c", "#ff99a4")
+COLOR_MUTED = ("#5c5c5c", "#9d9d9d")
 
+EXPAND_MS = 220
+BADGE_MENU_WIDTH = 380
+WHEEL_NOTCH_PX = 120
+WHEEL_GLIDE_MS = 180
 
-def menu_shadow() -> ft.BoxShadow:
-    return ft.BoxShadow(
-        blur_radius=16,
-        color=T.SHADOW,
-        offset=ft.Offset(0, 4),
-    )
-BUTTON_HEIGHT = T.BUTTON_HEIGHT
-LOG_PANEL_HEIGHT_HOME = 280
-LOG_PANEL_HEIGHT_TEST = 560
+# InfoBadge colours by status: (light background, dark background, attention uses the accent).
+_BADGE_COLORS = {
+    "active": ("#0f7b0f", "#6ccb5f"),
+    "expiring": ("#9d5d00", "#fce100"),
+    "error": ("#c42b1c", "#ff99a4"),
+    "offline": ("#5c5c5c", "#9d9d9d"),
+    "connecting": ("#005fb8", "#60cdff"),
+}
 
-_active_select_close: Callable[[], None] | None = None
-_page_keyboard_saved: Callable[[ft.KeyboardEvent], None] | None = None
-_select_scroll_reposition: Callable[[float], None] | None = None
-MENU_GAP = 8
-
-
-def _select_menu_item_style(*, selected: bool) -> ft.ButtonStyle:
-    """Выбранный пункт подсвечен так же тускло, как наведённый, и не меняет фон от фокуса:
-    иначе Flutter, уводя фокус на наведённый пункт, зажигает выбранный ярче."""
-    hover_bg = T.OVERLAY_HOVER
-    text_color = T.MENU_SELECTED if selected else T.TEXT
-    if selected:
-        return ft.ButtonStyle(
-            shape=ft.RoundedRectangleBorder(radius=MENU_ITEM_RADIUS),
-            padding=ft.Padding.symmetric(horizontal=16, vertical=0),
-            alignment=ft.Alignment(-1, 0),
-            color={ft.ControlState.DEFAULT: text_color},
-            text_style=ft.TextStyle(size=T.FONT_BODY, font_family=T.FONT_FAMILY, weight=ft.FontWeight.W_400),
-            bgcolor={ft.ControlState.DEFAULT: hover_bg},
-            overlay_color={ft.ControlState.DEFAULT: "#00000000"},
-            mouse_cursor=ft.MouseCursor.CLICK,
-            visual_density=ft.VisualDensity.COMPACT,
-        )
-    return ft.ButtonStyle(
-        shape=ft.RoundedRectangleBorder(radius=MENU_ITEM_RADIUS),
-        padding=ft.Padding.symmetric(horizontal=16, vertical=0),
-        alignment=ft.Alignment(-1, 0),
-        color={ft.ControlState.DEFAULT: text_color},
-        text_style=ft.TextStyle(
-            size=T.FONT_BODY,
-            font_family=T.FONT_FAMILY,
-            weight=ft.FontWeight.W_400,
-        ),
-        bgcolor={
-            ft.ControlState.DEFAULT: T.SELECTED if selected else "#00000000",
-            ft.ControlState.HOVERED: hover_bg,
-            ft.ControlState.FOCUSED: hover_bg,
-        },
-        overlay_color={
-            ft.ControlState.HOVERED: hover_bg,
-            ft.ControlState.FOCUSED: hover_bg,
-        },
-        mouse_cursor=ft.MouseCursor.CLICK,
-        visual_density=ft.VisualDensity.COMPACT,
-    )
+_LEVELS = {
+    "active": InfoLevel.SUCCESS,
+    "connecting": InfoLevel.ATTENTION,
+    "expiring": InfoLevel.WARNING,
+    "error": InfoLevel.ERROR,
+    "offline": InfoLevel.INFOAMTION,
+}
 
 
-def _raise_menu_overlay(page: ft.Page, menu_popup: ft.Control) -> None:
-    """Keep the open menu last in page.overlay to win z-order."""
-    if menu_popup in page.overlay:
-        page.overlay.remove(menu_popup)
-    page.overlay.append(menu_popup)
+def use_vsync_rendering() -> None:
+    """Compose widgets through Direct3D. Software composition is not synchronised with the
+    display, which shows as tears while scrolling. Call before QApplication is created."""
+    os.environ.setdefault("QT_WIDGETS_RHI", "1")
+    os.environ.setdefault("QT_WIDGETS_RHI_BACKEND", "d3d11")
+    # Without an alpha channel the see-through part of the window comes out black
+    # instead of showing Mica.
+    surface = QSurfaceFormat.defaultFormat()
+    surface.setAlphaBufferSize(8)
+    QSurfaceFormat.setDefaultFormat(surface)
 
 
-def _close_active_select(*, refresh: bool = True) -> None:
-    global _active_select_close
-    if _active_select_close is not None:
-        close = _active_select_close
-        _active_select_close = None
-        close(refresh=refresh)
+def _display_tick_ms() -> int:
+    rates = [screen.refreshRate() for screen in QApplication.screens()]
+    return max(1, round(1000 / max([*rates, 60.0])))
 
 
-def close_active_select(*, refresh: bool = True) -> None:
-    """Close the currently open custom select, if any."""
-    _close_active_select(refresh=refresh)
+def play_at_display_rate(animation: QAbstractAnimation) -> None:
+    """Play an animation at the display's rate. Qt ticks every animation 60 times a second,
+    which reads as too few frames on a faster monitor, and has no public way to change it."""
+    if animation.state() != QAbstractAnimation.State.Running:
+        animation.start()
+    animation.pause()
+    clock = QElapsedTimer()
+    clock.start()
+    offset = animation.currentTime()
+    previous = getattr(animation, "display_timer", None)
+    if previous is not None:
+        previous.stop()
+        previous.deleteLater()
+    timer = QTimer(animation)
+    timer.setTimerType(Qt.TimerType.PreciseTimer)
+    timer.setInterval(_display_tick_ms())
+    animation.display_timer = timer
+
+    def tick() -> None:
+        if animation.state() == QAbstractAnimation.State.Stopped:
+            timer.stop()
+            return
+        animation.setCurrentTime(offset + clock.elapsed())
+
+    timer.timeout.connect(tick)
+    timer.start()
 
 
-def _global_keyboard_handler(e: ft.KeyboardEvent) -> None:
-    if e.key == "Escape" and _active_select_close is not None:
-        _active_select_close()
-        return
-    saved = _page_keyboard_saved
-    if saved is not None and saved is not _global_keyboard_handler:
-        saved(e)
+@lru_cache(maxsize=None)
+def _lucide_source(name: str) -> str:
+    return (program_root() / "assets" / "icons" / "lucide" / f"{name}.svg").read_text(encoding="utf-8")
 
 
-def _attach_page_keyboard(page: ft.Page) -> None:
-    global _page_keyboard_saved
-    if _page_keyboard_saved is None:
-        _page_keyboard_saved = page.on_keyboard_event  # type: ignore[assignment]
-        page.on_keyboard_event = _global_keyboard_handler
+class Lucide(FluentIconBase):
+    """Icon from assets/icons/lucide, drawn in the theme's text colour."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def path(self, theme=Theme.AUTO) -> str:
+        return str(program_root() / "assets" / "icons" / "lucide" / f"{self.name}.svg")
+
+    def _svg(self, theme, color=None) -> str:
+        if color is None:
+            dark = isDarkTheme() if theme == Theme.AUTO else theme == Theme.DARK
+            color = "#ffffff" if dark else "#000000"
+        return _lucide_source(self.name).replace("currentColor", QColor(color).name())
+
+    def icon(self, theme=Theme.AUTO, color=None) -> QIcon:
+        return QIcon(SvgIconEngine(self._svg(theme, color)))
+
+    def render(self, painter, rect, theme=Theme.AUTO, indexes=None, **attributes) -> None:
+        renderer = QSvgRenderer(QByteArray(self._svg(theme, attributes.get("fill")).encode("utf-8")))
+        renderer.render(painter, QRectF(rect))
 
 
-def _detach_page_keyboard(page: ft.Page) -> None:
-    global _page_keyboard_saved
-    if _active_select_close is None and _page_keyboard_saved is not None:
-        page.on_keyboard_event = _page_keyboard_saved  # type: ignore[assignment]
-        _page_keyboard_saved = None
+class ExpandChevron(QAbstractButton):
+    """Expander arrow that turns over when its row opens."""
+
+    def __init__(self, expanded: bool = False, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(30, 30)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._angle = 180.0 if expanded else 0.0
+        self._icon = Lucide("chevron-down")
+        self._turn = QPropertyAnimation(self, b"angle", self)
+        self._turn.setDuration(EXPAND_MS)
+        self._turn.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def _get_angle(self) -> float:
+        return self._angle
+
+    def _set_angle(self, value: float) -> None:
+        self._angle = value
+        self.update()
+
+    angle = Property(float, _get_angle, _set_angle)
+
+    def set_expanded(self, expanded: bool) -> None:
+        self._turn.stop()
+        self._turn.setStartValue(self._angle)
+        self._turn.setEndValue(180.0 if expanded else 0.0)
+        play_at_display_rate(self._turn)
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform)
+        if self.underMouse():
+            shade = 255 if isDarkTheme() else 0
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(shade, shade, shade, 14))
+            painter.drawRoundedRect(self.rect(), 4, 4)
+        painter.translate(self.width() / 2, self.height() / 2)
+        painter.rotate(self._angle)
+        self._icon.render(painter, QRectF(-8, -8, 16, 16))
+
+    def enterEvent(self, event) -> None:
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.update()
+        super().leaveEvent(event)
 
 
-def _calc_menu_content_height(option_count: int) -> int:
-    if option_count <= 0:
-        return MENU_ITEM_HEIGHT
-    spacing = max(0, option_count - 1) * 4
-    inner = option_count * MENU_ITEM_HEIGHT + spacing
-    return min(MENU_MAX_HEIGHT - MENU_POPUP_VPAD, inner)
+def apply_theme(mode: str) -> None:
+    """``mode``: auto | dark | light. The accent always comes from Windows."""
+    setTheme({"dark": Theme.DARK, "light": Theme.LIGHT}.get(mode, Theme.AUTO))
+    accent = getSystemAccentColor()
+    if accent.isValid():
+        setThemeColor(accent)
 
 
-def _calc_menu_height(option_count: int) -> int:
-    return _calc_menu_content_height(option_count) + MENU_POPUP_VPAD
+def caption(text: str, *, parent: QWidget | None = None) -> CaptionLabel:
+    label = CaptionLabel(text, parent)
+    label.setWordWrap(True)
+    label.setTextColor(*COLOR_MUTED)
+    return label
 
 
-def _window_height(page: ft.Page) -> float:
-    window = getattr(page, "window", None)
-    if window is not None and window.height:
-        return float(window.height)
-    if page.height:
-        return float(page.height)
-    return 760.0
+def spinner(size: int = 16, parent: QWidget | None = None) -> IndeterminateProgressRing:
+    ring = IndeterminateProgressRing(parent)
+    ring.setFixedSize(size, size)
+    ring.setStrokeWidth(2)
+    return ring
 
 
-def _content_bottom(page: ft.Page) -> float:
-    """Bottom edge of the scrollable body (window coords), excluding body padding."""
-    return _window_height(page) - 8.0
+def row(*widgets: QWidget, stretch: bool = True, spacing: int = 8) -> QWidget:
+    """A horizontal strip of controls, left-aligned unless ``stretch`` is off."""
+    holder = QWidget()
+    layout = QHBoxLayout(holder)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(spacing)
+    for widget in widgets:
+        layout.addWidget(widget)
+    if stretch:
+        layout.addStretch(1)
+    return holder
 
 
-def _global_from_tap(e: ft.TapEvent) -> tuple[float, float] | None:
-    if e.global_position is None or e.local_position is None:
-        return None
-    field_left = e.global_position.x - e.local_position.x
-    field_top = e.global_position.y - e.local_position.y
-    return field_left, field_top
+def clear_layout(layout) -> None:
+    while layout.count():
+        item = layout.takeAt(0)
+        widget = item.widget()
+        if widget is not None:
+            widget.setParent(None)
+            widget.deleteLater()
+        elif item.layout() is not None:
+            clear_layout(item.layout())
 
 
-def _menu_height_for_options(option_count: int, resolved: int | None) -> float:
-    if resolved is not None:
-        return float(resolved)
-    return float(_calc_menu_height(option_count))
+class _BadgeDelegate(IndicatorMenuItemDelegate):
+    """Menu item with the same status badge a strategy has elsewhere."""
+
+    def __init__(self, select: "Select") -> None:
+        super().__init__()
+        self._select = select
+
+    def paint(self, painter, option, index) -> None:
+        super().paint(painter, option, index)
+        items = self._select.items
+        if index.row() >= len(items):
+            return
+        badge = self._select.badges.get(str(items[index.row()].userData))
+        if badge is None:
+            return
+        kind, text = badge
+        light, dark = _BADGE_COLORS.get(kind, _BADGE_COLORS["offline"])
+        is_dark = isDarkTheme()
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        font = painter.font()
+        font.setPixelSize(11)
+        painter.setFont(font)
+        width = painter.fontMetrics().horizontalAdvance(text) + 16
+        rect = option.rect.adjusted(0, 0, -14, 0)
+        box = QRectF(rect.right() - width, rect.center().y() - 8, width, 16)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(dark if is_dark else light))
+        painter.drawRoundedRect(box, 8, 8)
+        painter.setPen(QColor("#000000" if is_dark else "#ffffff"))
+        painter.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
+        painter.restore()
 
 
-def _placement_menu_height(option_count: int, resolved: int | None) -> float:
-    """Height used for flip/placement (always known, even for short lists)."""
-    return _menu_height_for_options(option_count, resolved or _calc_menu_height(option_count))
+class Select(ComboBox):
+    """ComboBox over (value, label) pairs; ``changed`` fires only on user choice."""
+
+    changed = Signal(str)
+
+    def __init__(self, options: Sequence[tuple[str, str]] = (), value: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._guard = False
+        self.badges: dict[str, tuple[str, str]] = {}  # value -> (status kind, text)
+        self.setMinimumWidth(240)
+        self.setMaxVisibleItems(12)
+        self.set_options(options, value)
+        self.currentIndexChanged.connect(self._on_index)
+
+    def set_options(self, options: Sequence[tuple[str, str]], value: str = "") -> None:
+        self._guard = True
+        self.clear()
+        for option_value, label in options:
+            self.addItem(label, userData=option_value)
+        self.set_value(value)
+        self._guard = False
+
+    def _showComboMenu(self):
+        super()._showComboMenu()
+        if self.dropMenu is not None and self.dropMenu.aniManager is not None:
+            play_at_display_rate(self.dropMenu.aniManager.ani)
+
+    def _createComboMenu(self):
+        menu = ComboBoxMenu(self)
+        if self.badges:
+            menu.view.setMinimumWidth(BADGE_MENU_WIDTH)
+            # Set on the instance: a Python subclass of this menu loses its exec() override.
+            menu.badge_delegate = _BadgeDelegate(self)
+            menu.view.setItemDelegate(menu.badge_delegate)
+        return menu
+
+    def value(self) -> str:
+        return str(self.currentData() or "")
+
+    def set_value(self, value: str) -> None:
+        guard = self._guard
+        self._guard = True
+        index = self.findData(value)
+        if index >= 0:
+            self.setCurrentIndex(index)
+        self._guard = guard
+
+    def _on_index(self, _index: int) -> None:
+        if not self._guard:
+            self.changed.emit(self.value())
 
 
-def _should_open_upward(
-    field_top: float,
-    menu_height: float,
-    content_bottom: float,
-) -> bool:
-    space_below = content_bottom - (field_top + T.FIELD_HEIGHT + MENU_GAP)
-    space_above = field_top - MENU_GAP
-    if space_below >= menu_height:
-        return False
-    if space_above >= menu_height:
-        return True
-    return space_above > space_below
+class OptionCard(SimpleCardWidget):
+    """Fluent settings row: icon, title with description, controls on the right."""
+
+    def __init__(
+        self,
+        title: str,
+        description: str = "",
+        *controls: QWidget,
+        icon: FluentIconBase | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.outer = QVBoxLayout(self)
+        self.outer.setContentsMargins(16, 12, 16, 12)
+        self.outer.setSpacing(8)
+        line = QHBoxLayout()
+        line.setSpacing(16)
+        if icon is not None:
+            mark = IconWidget(icon, self)
+            mark.setFixedSize(16, 16)
+            line.addWidget(mark)
+        texts = QVBoxLayout()
+        texts.setSpacing(0)
+        self.texts = texts
+        self.title_label = BodyLabel(title, self)
+        self.title_label.setWordWrap(True)
+        texts.addWidget(self.title_label)
+        self.description_label = caption(description, parent=self)
+        self.description_label.setVisible(bool(description))
+        texts.addWidget(self.description_label)
+        line.addLayout(texts, 1)
+        for control in controls:
+            line.addWidget(control, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.outer.addLayout(line)
 
 
-def _pill_style(*, primary: bool = False, destructive: bool = False) -> ft.ButtonStyle:
-    shape = ft.RoundedRectangleBorder(radius=T.RADIUS_PILL)
-    text_style = ft.TextStyle(
-        size=T.FONT_BODY,
-        font_family=T.FONT_UI,
-        weight=ft.FontWeight.W_600,
-    )
-    padding = ft.Padding.symmetric(horizontal=12, vertical=0)
-    hover_overlay = T.OUTLINE_HOVER
-    disabled_bg = T.ELEVATED
-    disabled_fg = T.TEXT_MUTED
-    disabled_side = T.BORDER
-    if destructive:
-        return ft.ButtonStyle(
-            color={
-                ft.ControlState.DEFAULT: T.STATUS_ERROR,
-                ft.ControlState.DISABLED: disabled_fg,
-            },
-            side={
-                ft.ControlState.DEFAULT: ft.BorderSide(1, T.STATUS_ERROR),
-                ft.ControlState.DISABLED: ft.BorderSide(1, disabled_side),
-            },
-            bgcolor={
-                ft.ControlState.DISABLED: disabled_bg,
-            },
-            shape=shape,
-            padding=padding,
-            text_style=text_style,
-            elevation=0,
-            overlay_color={
-                ft.ControlState.HOVERED: T.HOVER_SCRIM,
-                ft.ControlState.PRESSED: T.PRESS_SCRIM,
-            },
-        )
-    if primary:
-        return ft.ButtonStyle(
-            bgcolor={
-                ft.ControlState.DEFAULT: T.BUTTON,
-                ft.ControlState.DISABLED: disabled_bg,
-            },
-            color={
-                ft.ControlState.DEFAULT: T.ON_BUTTON,
-                ft.ControlState.DISABLED: disabled_fg,
-            },
-            shape=shape,
-            padding=padding,
-            text_style=text_style,
-            elevation=0,
-            overlay_color={
-                ft.ControlState.HOVERED: T.HOVER_SCRIM,
-                ft.ControlState.FOCUSED: T.HOVER_SCRIM,
-                ft.ControlState.PRESSED: T.PRESS_SCRIM,
-            },
-        )
-    return ft.ButtonStyle(
-        color={
-            ft.ControlState.DEFAULT: T.BUTTON,
-            ft.ControlState.DISABLED: disabled_fg,
-        },
-        side={
-            ft.ControlState.DEFAULT: ft.BorderSide(1, T.BUTTON),
-            ft.ControlState.DISABLED: ft.BorderSide(1, disabled_side),
-        },
-        bgcolor={
-            ft.ControlState.DISABLED: disabled_bg,
-        },
-        shape=shape,
-        padding=padding,
-        text_style=text_style,
-        elevation=0,
-        overlay_color={
-            ft.ControlState.HOVERED: hover_overlay,
-            ft.ControlState.FOCUSED: hover_overlay,
-            ft.ControlState.PRESSED: hover_overlay,
-        },
-    )
+def switch(checked: bool, on_toggle: Callable[[bool], None] | None = None) -> SwitchButton:
+    button = SwitchButton()
+    button.setOnText("Вкл.")
+    button.setOffText("Выкл.")
+    button.setChecked(checked)
+    if on_toggle is not None:
+        button.checkedChanged.connect(on_toggle)
+    return button
 
 
-def ui_text(
+def switch_card(
+    title: str,
+    description: str,
+    checked: bool,
+    on_toggle: Callable[[bool], None],
+    *,
+    icon: FluentIconBase | None = None,
+) -> OptionCard:
+    return OptionCard(title, description, switch(checked, on_toggle), icon=icon)
+
+
+def select_card(
+    title: str,
+    options: Sequence[tuple[str, str]],
     value: str,
+    on_change: Callable[[str], None] | None,
     *,
-    size: float | None = None,
-    color: str | None = None,
-    weight: ft.FontWeight | None = None,
-    family: str | None = None,
-    **kwargs,
-) -> ft.Text:
-    return ft.Text(
-        value,
-        size=size if size is not None else T.FONT_BODY,
-        color=color if color is not None else T.TEXT,
-        weight=weight,
-        font_family=family or T.FONT_FAMILY,
-        **kwargs,
-    )
-
-
-class LeoSwitch:
-    """Переключатель Umbrae: 52×32, бегунок 24, ход 20px за 100 мс, радиус переключателя из шкалы."""
-
-    def __init__(self, *, label: str, value: bool, on_change: Callable[[bool], None]) -> None:
-        self.value = value
-        self._on_change = on_change
-        self.thumb = ft.Container(
-            width=24,
-            height=24,
-            border_radius=max(T.RADIUS_TOGGLE - 2, 1),
-            left=24 if value else 4,
-            top=4,
-            animate_position=ft.Animation(100, ft.AnimationCurve.EASE_IN_OUT),
-        )
-        self.track = ft.Container(
-            width=52,
-            height=32,
-            border_radius=T.RADIUS_TOGGLE,
-            content=ft.Stack([self.thumb], width=52, height=32),
-            on_click=self._toggle,
-        )
-        self.label = ui_text(label)
-        self.control = ft.Row(
-            [
-                self.track,
-                ft.Container(content=self.label, on_click=self._toggle),
-            ],
-            spacing=8,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            tight=True,
-        )
-        self.paint()
-
-    def paint(self) -> None:
-        self.track.bgcolor = T.BUTTON if self.value else T.TRACK_OFF
-        self.thumb.bgcolor = T.ON_BUTTON if self.value else T.TEXT
-        self.thumb.left = 24 if self.value else 4
-
-    def set_value(self, value: bool) -> None:
-        self.value = value
-        self.paint()
-        if self.track.page:
-            self.track.update()
-
-    def _toggle(self, _event: ft.ControlEvent) -> None:
-        self.set_value(not self.value)
-        self._on_change(self.value)
-
-
-def quiet_checkbox(**kwargs) -> ft.Checkbox:
-    """Чекбокс без материального круга: при наведении меняется сам знак, не пятно вокруг. Радиус — из шкалы Umbrae."""
-    kwargs.setdefault("hover_color", "#00000000")
-    kwargs.setdefault("shape", ft.RoundedRectangleBorder(radius=T.RADIUS_CHECKBOX))
-    kwargs.setdefault("splash_radius", 0)
-    kwargs.setdefault("active_color", T.BUTTON)
-    kwargs.setdefault("check_color", T.ON_BUTTON)
-    return ft.Checkbox(**kwargs)
-
-
-def status_pill(status: str, label: str | None = None, *, dense: bool = False) -> ft.Container:
-    """Бейдж статуса Umbrae: фон и текст одного статуса, радиус бейджа, без пилюли."""
-    colors = {
-        "active": (T.STATUS_ACTIVE_BG, T.STATUS_ACTIVE, "Активно"),
-        "connecting": (T.STATUS_CONNECTING_BG, T.STATUS_CONNECTING, "Подключение"),
-        "expiring": (T.STATUS_EXPIRING_BG, T.STATUS_EXPIRING, "Предупреждение"),
-        "error": (T.STATUS_ERROR_BG, T.STATUS_ERROR, "Ошибка"),
-        "offline": (T.STATUS_OFFLINE_BG, T.STATUS_OFFLINE, "Отключено"),
-    }
-    bg, fg, default = colors.get(status, colors["offline"])
-    dot_size = 5 if dense else 6
-    text_size = 11 if dense else 12
-    padding = (
-        ft.Padding.symmetric(horizontal=8, vertical=2)
-        if dense
-        else ft.Padding.symmetric(horizontal=12, vertical=4)
-    )
-    return ft.Container(
-        content=ft.Row(
-            [
-                ft.Container(width=dot_size, height=dot_size, bgcolor=fg, border_radius=dot_size / 2),
-                ui_text(label or default, size=text_size, color=fg, weight=ft.FontWeight.W_500),
-            ],
-            spacing=4 if dense else 6,
-            tight=True,
-        ),
-        bgcolor=bg,
-        padding=padding,
-        border_radius=T.RADIUS_BADGE,
-    )
-
-
-def block_section(title: str | None, *controls: ft.Control) -> ft.Container:
-    header: list[ft.Control] = []
-    if title:
-        header.append(
-            ui_text(title, size=T.FONT_SECTION, weight=ft.FontWeight.W_600, family=T.FONT_DISPLAY)
-        )
-    return ft.Container(
-        content=ft.Column(
-            [
-                *header,
-                ft.Container(
-                    content=ft.Column(
-                        list(controls),
-                        spacing=T.SPACE_FIELD,
-                        tight=True,
-                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                    ),
-                    bgcolor=T.SURFACE,
-                    border=ft.Border.all(1, T.BORDER),
-                    border_radius=T.RADIUS,
-                    padding=T.SECTION_PAD,
-                ),
-            ],
-            spacing=8,
-            tight=True,
-        ),
-        animate_opacity=ANIM,
-    )
-
-
-def _register_page_scroll(page: ft.Page, view: ft.ListView) -> None:
-    page._tigo_page_scroll = view  # type: ignore[attr-defined]
-    page._tigo_page_scroll_offset = 0  # type: ignore[attr-defined]
-
-    def track_scroll(e: ft.OnScrollEvent) -> None:
-        page._tigo_page_scroll_offset = e.pixels  # type: ignore[attr-defined]
-        if _select_scroll_reposition is not None:
-            _select_scroll_reposition(e.pixels)
-
-    view.on_scroll = track_scroll
-
-
-def scroll_page(*controls: ft.Control, page: ft.Page | None = None) -> ft.ListView:
-    def on_background_click(e: ft.ControlEvent) -> None:
-        _close_active_select(refresh=False)
-        if e.page:
-            e.page.update()
-
-    view = ft.ListView(
-        controls=[
-            ft.Container(
-                content=ft.Column(
-                    [*controls, ft.Container(height=24)],
-                    spacing=T.SPACE_SECTION,
-                    tight=True,
-                    horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                ),
-                padding=ft.Padding.only(right=28),
-                on_click=on_background_click,
-            )
-        ],
-        expand=True,
-        spacing=0,
-        padding=0,
-        scroll=ft.ScrollMode.ADAPTIVE,
-    )
-    if page is not None:
-        _register_page_scroll(page, view)
-    return view
-
-
-def set_pill_disabled(btn: ft.Control, disabled: bool) -> None:
-    """Update pill button disabled state (Material shows forbidden cursor when disabled)."""
-    if isinstance(btn, (ft.FilledButton, ft.OutlinedButton)):
-        btn.disabled = disabled
-
-
-def make_text_field(
-    label: str,
-    value: str = "",
-    *,
-    on_change: Callable[[ft.ControlEvent], None] | None = None,
-    read_only: bool = False,
-    expand: bool = True,
-    border_radius: float = 12,
-    field_ref: ft.Ref[ft.TextField] | None = None,
-) -> ft.Column:
-    field = ft.TextField(
-        ref=field_ref,
-        value=value,
-        height=T.FIELD_HEIGHT,
-        text_size=T.FONT_BODY,
-        text_style=ft.TextStyle(font_family=T.FONT_FAMILY, color=T.TEXT),
-        content_padding=ft.Padding.symmetric(horizontal=12, vertical=0),
-        border_radius=border_radius,
-        filled=True,
-        bgcolor=T.SURFACE,
-        border_color=T.BORDER,
-        focused_border_color=T.FOCUS,
-        focused_border_width=2,
-        cursor_color=T.BUTTON,
-        selection_color=T.SELECTED,
-        expand=expand,
-        read_only=read_only,
-        on_change=on_change,
-        on_focus=lambda _: _close_active_select(refresh=False),
-    )
-    return ft.Column(
-        [
-            ui_text(label, size=T.FONT_LABEL, color=T.TEXT_MUTED, weight=ft.FontWeight.W_500),
-            field,
-        ],
-        spacing=T.SPACE_LABEL,
-        tight=True,
-        expand=expand,
-    )
-
-
-def pill_button(
-    text: str,
-    *,
-    primary: bool = False,
-    destructive: bool = False,
-    on_click=None,
-    disabled: bool = False,
-) -> ft.Control:
-    style = _pill_style(primary=primary, destructive=destructive)
-    if primary:
-        return ft.FilledButton(
-            text,
-            disabled=disabled,
-            height=BUTTON_HEIGHT,
-            style=style,
-            on_click=_wrap_click(on_click),
-        )
-    return ft.OutlinedButton(
-        text,
-        disabled=disabled,
-        height=BUTTON_HEIGHT,
-        style=style,
-        on_click=_wrap_click(on_click),
-    )
-
-
-def _wrap_click(handler):
-    if handler is None:
-        return None
-
-    def wrapped(e: ft.ControlEvent) -> None:
-        _close_active_select(refresh=False)
-        page = None
-        try:
-            page = e.page
-        except RuntimeError:
-            pass
-        handler(e)
-        if page is not None:
-            try:
-                page.update()
-            except RuntimeError:
-                pass
-
-    return wrapped
-
-
-def bind_select_dismiss(handler):
-    """Close an open select, then run the control handler (one page.update at the end)."""
-    return _wrap_click(handler)
-
-
-def make_select(
-    page: ft.Page,
-    label: str,
-    options: list[tuple[str, str]],
-    value: str,
-    on_change=None,
-    *,
-    menu_height: int | None = None,
-    disabled: bool = False,
-    option_trailing: Callable[[str], ft.Control | None] | None = None,
-) -> ft.Column:
-    if menu_height is not None:
-        # An explicit height is a ceiling: a short list must not leave an empty tail.
-        natural = len(options) * MENU_ITEM_HEIGHT + max(0, len(options) - 1) * 4 + MENU_POPUP_VPAD
-        resolved_menu_height: int = min(menu_height, max(natural, MENU_ITEM_HEIGHT + MENU_POPUP_VPAD))
+    description: str = "",
+    icon: FluentIconBase | None = None,
+) -> OptionCard:
+    select = Select(options, value)
+    if on_change is None:
+        select.setEnabled(False)
     else:
-        resolved_menu_height = _calc_menu_height(len(options))
-    menu_content_height = max(MENU_ITEM_HEIGHT, resolved_menu_height - MENU_POPUP_VPAD)
+        select.changed.connect(on_change)
+    card = OptionCard(title, description, select, icon=icon)
+    card.select = select
+    return card
 
-    state: dict[str, object] = {"value": value or "", "open": False, "field_width": None}
-    chevron_ref = ft.Ref[ft.Icon]()
-    field_ref = ft.Ref[ft.Container]()
 
-    selected_label = next((t for k, t in options if k == state["value"]), "")
-    value_text = ui_text(
-        selected_label or state["value"] or "Выбрать",
-        size=T.FONT_BODY,
-        color=T.TEXT if selected_label or state["value"] else T.TEXT_FAINT,
-        expand=True,
-    )
+def text_field(value: str = "", *, placeholder: str = "", width: int | None = None) -> LineEdit:
+    field = LineEdit()
+    field.setText(value)
+    field.setPlaceholderText(placeholder)
+    if width is not None:
+        field.setFixedWidth(width)
+    return field
 
-    menu_col = ft.Column(
-        spacing=4,
-        tight=True,
-        scroll=ft.ScrollMode.ADAPTIVE if len(options) > 6 else None,
-        height=menu_content_height,
-        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-    )
 
-    menu_popup = ft.Container(
-        content=menu_col,
-        bgcolor=T.OVERLAY,
-        border=ft.Border.all(1, T.BORDER),
-        border_radius=T.RADIUS_L,
-        padding=ft.Padding.symmetric(horizontal=MENU_EDGE_INSET, vertical=4),
-        height=resolved_menu_height,
-        clip_behavior=ft.ClipBehavior.HARD_EDGE,
-        visible=False,
-        opacity=0,
-        scale=ft.Scale(0.95, alignment=ft.Alignment.TOP_CENTER),
-        animate_opacity=MENU_IN,
-        animate_scale=MENU_IN,
-        shadow=menu_shadow(),
-    )
+class StatusMark(QWidget):
+    """A coloured dot and a text that may be long, such as an error message."""
 
-    def set_chevron(opened: bool) -> None:
-        icon = chevron_ref.current
-        if icon is None:
+    def __init__(self, kind: str = "offline", text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        self._dot = DotInfoBadge(self)
+        self._dot.setFixedSize(8, 8)
+        layout.addWidget(self._dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._label = BodyLabel(self)
+        self._label.setWordWrap(True)
+        layout.addWidget(self._label, 1)
+        self.set_status(kind, text)
+
+    def set_status(self, kind: str, text: str) -> None:
+        self._dot.setLevel(_LEVELS.get(kind, InfoLevel.INFOAMTION))
+        self._label.setText(text)
+
+
+def status_badge(kind: str, text: str, parent: QWidget | None = None) -> InfoBadge:
+    return InfoBadge(text, parent, level=_LEVELS.get(kind, InfoLevel.INFOAMTION))
+
+
+class Group(QWidget):
+    """Header over a stack of cards — the Windows settings layout."""
+
+    def __init__(self, title: str | None, *widgets: QWidget, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.stack = QVBoxLayout(self)
+        self.stack.setContentsMargins(0, 0, 0, 0)
+        self.stack.setSpacing(ROW_GAP)
+        self.stack.setAlignment(Qt.AlignmentFlag.AlignTop)
+        if title:
+            header = StrongBodyLabel(title, self)
+            header.setWordWrap(True)
+            self.stack.addWidget(header)
+            self.stack.addSpacing(4)
+        for widget in widgets:
+            self.stack.addWidget(widget)
+
+    def add(self, *widgets: QWidget) -> None:
+        for widget in widgets:
+            self.stack.addWidget(widget)
+
+
+class Panel(SimpleCardWidget):
+    """Card holding free-form content rather than one setting."""
+
+    def __init__(self, *widgets: QWidget, spacing: int = 12, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.stack = QVBoxLayout(self)
+        self.stack.setContentsMargins(16, 16, 16, 16)
+        self.stack.setSpacing(spacing)
+        for widget in widgets:
+            self.stack.addWidget(widget)
+
+    def add(self, *widgets: QWidget) -> None:
+        for widget in widgets:
+            self.stack.addWidget(widget)
+
+
+class Page(ScrollArea):
+    """Scrolling page with the standard title. Subclasses fill it in ``build``."""
+
+    title = ""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.view = QWidget(self)
+        self.view.setObjectName("pageView")
+        self.body = QVBoxLayout(self.view)
+        self.body.setContentsMargins(PAGE_MARGIN, 28, PAGE_MARGIN, 28)
+        self.body.setSpacing(GROUP_GAP)
+        self.body.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.body.addWidget(TitleLabel(self.title, self.view))
+        self.setWidget(self.view)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        # The library's overlay bar eases every change of the value over half a second and
+        # pushes those old values back into the page: that is the jelly, and the jump after
+        # a change of height. It follows at once, the wheel gets a short glide of its own.
+        self.scrollDelagate.vScrollBar.duration = 0
+        self._glide = QVariantAnimation(self)
+        self._glide.setDuration(WHEEL_GLIDE_MS)
+        self._glide.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._glide.valueChanged.connect(lambda value: self.verticalScrollBar().setValue(int(value)))
+        self._glide_target = 0
+        self.scrollDelagate.verticalSmoothScroll.wheelEvent = self._on_wheel
+        # The window's Mica shows through the page.
+        self.setStyleSheet("QScrollArea, #pageView { background: transparent; border: none; }")
+
+    def _on_wheel(self, event) -> None:
+        delta = event.angleDelta().y()
+        bar = self.verticalScrollBar()
+        if delta == 0 or delta % 120 != 0:
+            # A touchpad already reports smooth, small steps.
+            self._glide.stop()
+            bar.setValue(bar.value() - event.pixelDelta().y())
             return
-        icon.rotate = ft.Rotate(math.pi if opened else 0, alignment=ft.Alignment.CENTER)
+        start = bar.value()
+        base = self._glide_target if self._glide.state() != QVariantAnimation.State.Stopped else start
+        self._glide_target = max(bar.minimum(), min(bar.maximum(), base - delta * WHEEL_NOTCH_PX // 120))
+        self._glide.stop()
+        self._glide.setStartValue(start)
+        self._glide.setEndValue(self._glide_target)
+        play_at_display_rate(self._glide)
 
-    def set_field_border(opened: bool) -> None:
-        field = field_ref.current
-        if field is None:
-            return
-        field.border = ft.Border.all(2 if opened else 1, T.FOCUS if opened else T.BORDER)
+    def add(self, *widgets: Iterable[QWidget] | QWidget) -> None:
+        for widget in widgets:
+            self.body.addWidget(widget)
 
-    def remove_overlay() -> None:
-        if menu_popup in page.overlay:
-            page.overlay.remove(menu_popup)
-
-    def _freeze_menu_animations() -> None:
-        menu_popup.animate_opacity = None
-        menu_popup.animate_scale = None
-        menu_popup.opacity = 1
-
-    def _resolve_field_width() -> float:
-        field_width = state.get("field_width")
-        if isinstance(field_width, (int, float)) and field_width > 0:
-            return float(field_width)
-        field = field_ref.current
-        if field is not None and field.width:
-            return float(field.width)
-        return 280.0
-
-    def close_menu(*, refresh: bool = True) -> None:
-        global _select_scroll_reposition
-        if not state["open"]:
-            return
-        state["open"] = False
-        menu_popup.visible = False
-        menu_popup.opacity = 0
-        menu_popup.shadow = menu_shadow()
-        menu_popup.top = None
-        menu_popup.bottom = None
-        menu_popup.width = None
-        menu_popup.animate_opacity = MENU_IN
-        menu_popup.animate_scale = MENU_IN
-        scale_origin = (
-            ft.Alignment.BOTTOM_CENTER
-            if state.get("open_upward")
-            else ft.Alignment.TOP_CENTER
-        )
-        menu_popup.scale = ft.Scale(0.95, alignment=scale_origin)
-        set_chevron(False)
-        set_field_border(False)
-        remove_overlay()
-        global _active_select_close
-        if _active_select_close is close_menu:
-            _active_select_close = None
-        if _select_scroll_reposition is reposition_menu:
-            _select_scroll_reposition = None
-        _detach_page_keyboard(page)
-        if refresh:
-            page.update()
-
-    def _sync_menu_item_widths() -> None:
-        width = _resolve_field_width()
-        inner = max(0.0, width - 2 * MENU_EDGE_INSET)
-        menu_col.width = inner
-        content_width = max(0.0, inner - 24)
-        for ctrl in menu_col.controls:
-            ctrl.width = inner
-            content = ctrl.content
-            if isinstance(content, ft.Container):
-                content.width = content_width
-
-    def _menu_item_content(text: str, trailing_controls: list[ft.Control], *, active: bool) -> ft.Container:
-        row_controls: list[ft.Control] = [
-            ft.Text(
-                text,
-                no_wrap=True,
-                expand=True,
-                overflow=ft.TextOverflow.ELLIPSIS,
-                size=T.FONT_BODY,
-                color=T.MENU_SELECTED if active else T.TEXT,
-                weight=ft.FontWeight.W_600 if active else ft.FontWeight.W_400,
-            ),
-        ]
-        if trailing_controls:
-            row_controls.append(
-                ft.Row(trailing_controls, spacing=4, tight=True)
-            )
-        return ft.Container(
-            content=ft.Row(
-                row_controls,
-                spacing=8,
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            expand=True,
-        )
-
-    def rebuild_menu() -> None:
-        menu_col.controls.clear()
-        for key, text in options:
-            active = key == state["value"]
-            trailing_controls: list[ft.Control] = []
-            if option_trailing:
-                extra = option_trailing(key)
-                if extra is not None:
-                    trailing_controls.append(extra)
-            elif active:
-                trailing_controls.append(
-                    ft.Icon(ft.Icons.CHECK, size=16, color=T.ACCENT)
-                )
-            item = ft.MenuItemButton(
-                content=_menu_item_content(text, trailing_controls, active=active),
-                height=MENU_ITEM_HEIGHT,
-                style=_select_menu_item_style(selected=active),
-                on_click=lambda _e, k=key, t=text: choose(k, t),
-            )
-            menu_col.controls.append(item)
-
-    def _apply_overlay_position(
-        field_top: float,
-        field_left: float,
-        open_upward: bool,
-    ) -> bool:
-        menu_height = float(state.get("anchor_menu_height", 0))
-        content_bottom = _content_bottom(page)
-        if (
-            not open_upward
-            and field_top + T.FIELD_HEIGHT + MENU_GAP + menu_height > content_bottom - 4
-            and field_top - MENU_GAP >= menu_height
-        ):
-            open_upward = True
-
-        if open_upward:
-            top = max(4.0, field_top - menu_height - MENU_GAP)
-        else:
-            top = field_top + T.FIELD_HEIGHT + MENU_GAP
-            if top + menu_height > content_bottom - 4:
-                top = max(4.0, content_bottom - menu_height - 4)
-
-        menu_popup.bottom = None
-        menu_popup.top = top
-        menu_popup.left = field_left
-        return open_upward
-
-    def reposition_menu(scroll_pixels: float) -> None:
-        if not state.get("open"):
-            return
-        delta = scroll_pixels - float(state.get("anchor_scroll", 0))
-        field_top = float(state["anchor_field_top"]) - delta
-        field_left = float(state["anchor_field_left"])
-        open_upward = bool(state.get("open_upward"))
-        state["open_upward"] = _apply_overlay_position(field_top, field_left, open_upward)
-        _raise_menu_overlay(page, menu_popup)
-        if menu_popup.page:
-            menu_popup.update()
-
-    def _menu_position(e: ft.TapEvent) -> tuple[float, float, bool, float] | None:
-        global_coords = _global_from_tap(e)
-        if global_coords is None:
-            return None
-
-        field_left, field_top = global_coords
-        menu_height = _placement_menu_height(len(options), resolved_menu_height)
-        content_bottom = _content_bottom(page)
-        open_upward = _should_open_upward(field_top, menu_height, content_bottom)
-        return field_left, field_top, open_upward, menu_height
-
-    def open_menu(e: ft.TapEvent) -> None:
-        global _select_scroll_reposition
-        _close_active_select(refresh=False)
-        rebuild_menu()
-        placement = _menu_position(e)
-        if placement is None:
-            return
-        field_left, field_top, open_upward, menu_height = placement
-        # Меню не выходит за окно: на нехватку места оно становится ниже и прокручивается.
-        content_bottom = _content_bottom(page)
-        if open_upward:
-            room = field_top - MENU_GAP - 4
-        else:
-            room = content_bottom - (field_top + T.FIELD_HEIGHT + MENU_GAP) - 4
-        fitted = min(menu_height, max(float(2 * MENU_ITEM_HEIGHT + MENU_POPUP_VPAD), room))
-        menu_popup.height = fitted
-        menu_col.height = max(MENU_ITEM_HEIGHT, fitted - MENU_POPUP_VPAD)
-        menu_col.scroll = ft.ScrollMode.ADAPTIVE if fitted < menu_height or len(options) > 6 else None
-        menu_height = fitted
-        state["anchor_field_top"] = field_top
-        state["anchor_field_left"] = field_left
-        state["anchor_scroll"] = getattr(page, "_tigo_page_scroll_offset", 0) or 0
-        state["anchor_menu_height"] = menu_height
-        open_upward = _apply_overlay_position(field_top, field_left, open_upward)
-        scale_origin = (
-            ft.Alignment.BOTTOM_CENTER if open_upward else ft.Alignment.TOP_CENTER
-        )
-        menu_popup.width = _resolve_field_width()
-        _sync_menu_item_widths()
-        menu_popup.animate_opacity = MENU_IN
-        menu_popup.animate_scale = MENU_IN
-        menu_popup.visible = True
-        menu_popup.opacity = 0
-        menu_popup.shadow = menu_shadow()
-        menu_popup.scale = ft.Scale(0.95, alignment=scale_origin)
-        state["open"] = True
-        state["open_upward"] = open_upward
-        set_chevron(True)
-        set_field_border(True)
-
-        remove_overlay()
-        _raise_menu_overlay(page, menu_popup)
-
-        global _active_select_close
-        _active_select_close = close_menu
-        _select_scroll_reposition = reposition_menu
-
-        _attach_page_keyboard(page)
-        page.update()
-
-        async def reveal() -> None:
-            await asyncio.sleep(0.05)
-            if not state.get("open"):
-                return
-            menu_popup.animate_opacity = MENU_IN
-            menu_popup.animate_scale = MENU_IN
-            menu_popup.opacity = 1
-            menu_popup.scale = ft.Scale(1, alignment=scale_origin)
-            try:
-                menu_popup.update()
-            except RuntimeError:
-                return
-            await asyncio.sleep(0.32)
-            if state.get("open"):
-                _freeze_menu_animations()
-
-        page.run_task(reveal)
-
-    def on_field_tap(e: ft.TapEvent) -> None:
-        if disabled:
-            return
-        if state["open"]:
-            close_menu()
-        else:
-            open_menu(e)
-
-    def choose(key: str, text: str) -> None:
-        state["value"] = key
-        value_text.value = text
-        value_text.color = T.TEXT
-        close_menu(refresh=False)
-        page.update()
-        if on_change:
-            on_change(key)
-
-    def on_field_size(e: ft.LayoutSizeChangeEvent) -> None:
-        if e.width > 0:
-            state["field_width"] = e.width
-
-    chevron = ft.Icon(
-        ft.Icons.EXPAND_MORE,
-        ref=chevron_ref,
-        color=T.TEXT_MUTED,
-        size=18,
-        animate_rotation=CHEVRON_ANIM,
-        rotate=ft.Rotate(0, alignment=ft.Alignment.CENTER),
-    )
-
-    field = ft.Container(
-        ref=field_ref,
-        content=ft.Row(
-            [value_text, chevron],
-            spacing=8,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        ),
-        height=T.FIELD_HEIGHT,
-        bgcolor=T.SURFACE,
-        border=ft.Border.all(1, T.BORDER),
-        border_radius=T.RADIUS,
-        padding=ft.Padding.symmetric(horizontal=12, vertical=0),
-        on_size_change=on_field_size,
-        opacity=0.72 if disabled else 1.0,
-    )
-
-    rebuild_menu()
-
-    return ft.Column(
-        [
-            ui_text(label, size=T.FONT_LABEL, color=T.TEXT_MUTED, weight=ft.FontWeight.W_500),
-            ft.GestureDetector(
-                content=field,
-                on_tap=on_field_tap,
-            ),
-        ],
-        spacing=T.SPACE_LABEL,
-        tight=True,
-    )
+    def stop(self) -> None:
+        """Stop timers and subscriptions; the page is about to be destroyed."""
 
 
-def _log_panel(content: ft.Control, *, height: int) -> ft.Container:
-    return ft.Container(
-        content=content,
-        bgcolor=T.SUNKEN,
-        border=ft.Border.all(1, T.BORDER),
-        border_radius=T.RADIUS,
-        padding=12,
-        height=height,
-        expand=True,
-        clip_behavior=ft.ClipBehavior.HARD_EDGE,
-    )
-
-
-def _refresh_control(control: ft.Control) -> None:
-    """Update a control only when it is mounted on the page."""
-    if not getattr(control, "page", None):
-        return
-    try:
-        control.update()
-    except RuntimeError as exc:
-        if "must be added to the page first" not in str(exc):
-            raise
-
-
-def test_log_console(page: ft.Page) -> tuple[ft.Container, Callable[[], None]]:
-    """Read-only colored log for strategy testing."""
-    from src.modules.strategy_testing import journal as tls
-
-    log_text = ft.Text(
-        spans=[],
-        size=T.FONT_CAPTION,
-        color=T.TEXT,
-        font_family=T.FONT_MONO,
-        selectable=True,
-    )
-
-    log_column = ft.Column(
-        [log_text],
-        expand=True,
-        scroll=ft.ScrollMode.ALWAYS,
-    )
-
-    def _build_spans() -> list[ft.TextSpan]:
-        lines = tls.get_lines()
-        if not lines:
-            return [
-                ft.TextSpan(
-                    " ",
-                    style=ft.TextStyle(
-                        color=T.TEXT_MUTED,
-                        font_family=T.FONT_MONO,
-                        size=T.FONT_CAPTION,
-                    ),
-                )
-            ]
-        layout = tls.compute_table_layout(lines)
-        spans: list[ft.TextSpan] = []
-        mono = ft.TextStyle(font_family=T.FONT_MONO, size=T.FONT_CAPTION)
-        for index, line in enumerate(lines):
-            if index:
-                spans.append(ft.TextSpan("\n", style=mono))
-            for chunk, color in tls.line_text_spans(line, layout=layout):
-                if not chunk:
-                    continue
-                spans.append(
-                    ft.TextSpan(
-                        chunk,
-                        style=ft.TextStyle(color=color, font_family=T.FONT_MONO, size=T.FONT_CAPTION),
-                    )
-                )
-        return spans
-
-    def rebuild() -> None:
-        log_text.value = ""
-        log_text.spans = _build_spans()
-        _refresh_control(log_text)
-
-    tls.subscribe(rebuild)
-
-    def unsubscribe() -> None:
-        tls.unsubscribe(rebuild)
-
-    return (
-        _log_panel(
-            ft.SelectionArea(content=log_column),
-            height=LOG_PANEL_HEIGHT_TEST,
-        ),
-        unsubscribe,
-    )
-
-section = block_section
+__all__ = [
+    "COLOR_ERROR",
+    "COLOR_MUTED",
+    "COLOR_SUCCESS",
+    "COLOR_WARNING",
+    "EXPAND_MS",
+    "ExpandChevron",
+    "Group",
+    "Lucide",
+    "OptionCard",
+    "Page",
+    "Panel",
+    "Select",
+    "StatusMark",
+    "apply_theme",
+    "caption",
+    "clear_layout",
+    "row",
+    "select_card",
+    "spinner",
+    "status_badge",
+    "switch",
+    "switch_card",
+    "text_field",
+    "play_at_display_rate",
+    "use_vsync_rendering",
+]

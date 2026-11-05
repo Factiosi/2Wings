@@ -1,7 +1,7 @@
 """Lightweight winws process probe (canonical path).
 
-Tigo's engine is bin/winws2.exe. bin/winws.exe left by Tigo before the winws2
-switch still counts as Tigo's own, so stop() can clean it up; winws/winws2
+2Wings's engine is bin/winws2.exe. bin/winws.exe left by 2Wings before the winws2
+switch still counts as 2Wings's own, so stop() can clean it up; winws/winws2
 from anywhere else is foreign and blocks the launch (WinDivert is shared).
 """
 
@@ -10,8 +10,6 @@ from __future__ import annotations
 import ctypes
 import os
 from ctypes import wintypes
-from pathlib import Path
-
 from src.core.paths import ENGINE_EXE, LEGACY_ENGINE_EXE, bin_dir
 
 _ENGINE_NAMES = frozenset({ENGINE_EXE, LEGACY_ENGINE_EXE})
@@ -97,7 +95,7 @@ def find_canonical_winws_pids() -> list[int]:
 
 
 def find_foreign_winws_processes() -> list[tuple[int, str]]:
-    """Return queryable winws/winws2 processes launched outside Tigo's bin directory."""
+    """Return queryable winws/winws2 processes launched outside 2Wings's bin directory."""
     expected = _canonical_paths()
     kernel32 = ctypes.windll.kernel32
     snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)

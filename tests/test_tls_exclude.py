@@ -7,8 +7,8 @@ from pathlib import Path
 from src.modules.strategies.winws2 import TLS_ALERT_FILTER, inject_tls_watch
 from src.modules.tls_exclude.watcher import MARK, Report, apply_reports, parse_reports, take_reports
 
-SCRIPT = Path(r"C:\Tigo\assets\lua\tigo-tls-watch.lua")
-WRITABLE = Path(r"C:\Users\u\AppData\Roaming\Tigo\cache\winws2")
+SCRIPT = Path(r"C:\2Wings\assets\lua\twowings-tls-watch.lua")
+WRITABLE = Path(r"C:\Users\u\AppData\Roaming\2Wings\cache\winws2")
 WATCH = ["--out-range=x", "--in-range=a"]
 RESET = ["--in-range=x", "--out-range=a"]
 
@@ -17,7 +17,7 @@ class InjectTests(unittest.TestCase):
     def test_every_profile_gets_watch_with_the_right_exclude_mode(self) -> None:
         argv = [
             "--wf-tcp-out=443",
-            "--lua-init=@C:\\Tigo\\lua\\zapret-antidpi.lua",
+            "--lua-init=@C:\\2Wings\\lua\\zapret-antidpi.lua",
             "--filter-tcp=443",
             "--hostlist-exclude=C:\\l\\list-exclude.txt",
             "--lua-desync=fake",
@@ -29,13 +29,13 @@ class InjectTests(unittest.TestCase):
         ]
         result = inject_tls_watch(argv, script=SCRIPT, writable_dir=WRITABLE)
         self.assertEqual(result[:2], [f"--writable={WRITABLE}", f"--wf-raw-part={TLS_ALERT_FILTER}"])
-        first = result.index("--lua-desync=tigo_tls_watch")
+        first = result.index("--lua-desync=twowings_tls_watch")
         self.assertEqual(result[first - 2 : first], WATCH)
         self.assertEqual(result[first + 1 : first + 3], RESET)
         new = result.index("--new")
-        self.assertEqual(result[new + 3], "--lua-desync=tigo_tls_watch:exclude=ip")
+        self.assertEqual(result[new + 3], "--lua-desync=twowings_tls_watch:exclude=ip")
         self.assertLess(new + 3, result.index("--out-range=<n2"))
-        init = result.index("--lua-init=@C:\\Tigo\\lua\\zapret-antidpi.lua")
+        init = result.index("--lua-init=@C:\\2Wings\\lua\\zapret-antidpi.lua")
         self.assertEqual(result[init + 1], f"--lua-init=@{SCRIPT}")
 
     def test_filter_matches_fatal_alerts_and_http_replies_off_port_80(self) -> None:
@@ -89,3 +89,16 @@ class ReportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LuaScriptTests(unittest.TestCase):
+    def test_the_script_defines_the_function_the_arguments_call(self) -> None:
+        from src.core.paths import tls_watch_script
+        from src.modules.strategies.winws2 import inject_tls_watch
+
+        argv = inject_tls_watch(["--new"], script=tls_watch_script(), writable_dir=Path("w"))
+        called = {arg.split("=", 1)[1].split(":", 1)[0] for arg in argv if arg.startswith("--lua-desync=")}
+        self.assertTrue(called)
+        source = tls_watch_script().read_text(encoding="utf-8")
+        for name in called:
+            self.assertIn(f"function {name}(", source)

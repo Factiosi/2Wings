@@ -90,10 +90,6 @@ def format_status_lines(state: DnsPageState) -> list[str]:
     return ["Текущий DNS: адаптер не выбран"]
 
 
-def format_status_line(state: DnsPageState) -> str:
-    return "\n".join(format_status_lines(state))
-
-
 def resolve_apply_adapters(selected: str, adapter_names: list[str]) -> list[str]:
     physical = [name for name in adapter_names if name != ALL_ADAPTERS_KEY]
     if selected == ALL_ADAPTERS_KEY:

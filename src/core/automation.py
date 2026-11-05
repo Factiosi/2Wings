@@ -13,4 +13,4 @@ def automation_enabled() -> bool:
     """Enable automatically in source runs, explicitly in packaged test builds."""
     if not is_packaged_app():
         return True
-    return os.environ.get("TIGO_AUTOMATION", "").strip().lower() in _TRUE_VALUES
+    return os.environ.get("TWOWINGS_AUTOMATION", "").strip().lower() in _TRUE_VALUES

@@ -2,7 +2,7 @@
 
 The catalog is a snapshot: relay addresses change and some die (a Comss relay
 written for Gemini stopped answering while another profile already proxied it).
-For profiles that publish a DoH endpoint Tigo resolves every domain at apply
+For profiles that publish a DoH endpoint 2Wings resolves every domain at apply
 time and keeps only *relay* answers — those that differ from what a neutral
 resolver returns; a domain the profile does not proxy is left to normal DNS.
 Every address that goes into hosts must accept a TCP connection on 443.
@@ -102,7 +102,7 @@ def relay_rows(
     qtypes = [TYPE_A, TYPE_AAAA] if ipv6 else [TYPE_A]
     jobs = [(domain, qtype) for domain in dict.fromkeys(domains) for qtype in qtypes]
     limits = httpx.Limits(max_connections=WORKERS * 2, max_keepalive_connections=WORKERS * 2)
-    with httpx.Client(timeout=httpx.Timeout(10.0, connect=5.0), limits=limits, headers={"User-Agent": "Tigo"}) as client:
+    with httpx.Client(timeout=httpx.Timeout(10.0, connect=5.0), limits=limits, headers={"User-Agent": "2Wings"}) as client:
 
         def ask(job: tuple[str, int]) -> tuple[list[str] | None, list[str] | None]:
             domain, qtype = job

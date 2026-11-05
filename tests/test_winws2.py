@@ -5,8 +5,8 @@ from pathlib import Path
 
 from src.modules.strategies.winws2 import ConversionError, convert_winws1_argv, to_winws2_argv
 
-LUA = Path(r"C:\Tigo\lua")
-BIN = r"C:\Tigo Data\bin"
+LUA = Path(r"C:\2Wings\lua")
+BIN = r"C:\2Wings Data\bin"
 
 
 def convert(*argv: str) -> list[str]:
@@ -38,7 +38,7 @@ class GeneralStrategyTests(unittest.TestCase):
                 "--payload=quic_initial",
                 "--lua-desync=fake:blob=fs_quic_initial_www_google_com:repeats=6",
                 "--payload=wireguard_initiation,dht,discord_ip_discovery,stun",
-                "--lua-desync=fake:blob=tigo_zero64:repeats=6",
+                "--lua-desync=fake:blob=twowings_zero64:repeats=6",
             ],
         )
 

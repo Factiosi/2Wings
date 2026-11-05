@@ -1,8 +1,8 @@
-r"""Запуск TigoUpdate: окно обновления, которое само скачивает и ставит новую версию.
+r"""Запуск TwoWingsUpdate: окно обновления, которое само скачивает и ставит новую версию.
 
-Установка кладёт TigoUpdate в Program Files\Tigo\updater. Запускать его оттуда нельзя: установщик
-закрывает всё, что держит файлы Program Files\Tigo. Поэтому Tigo один раз копирует папку в
-%LOCALAPPDATA%\Tigo\updater\<ревизия> и запускает копию. Новая ревизия ложится рядом и не
+Установка кладёт TwoWingsUpdate в Program Files\2Wings\updater. Запускать его оттуда нельзя: установщик
+закрывает всё, что держит файлы Program Files\2Wings. Поэтому 2Wings один раз копирует папку в
+%LOCALAPPDATA%\2Wings\updater\<ревизия> и запускает копию. Новая ревизия ложится рядом и не
 трогает работающую.
 """
 
@@ -18,9 +18,9 @@ from src.core.debug_log import debug
 from src.core.paths import APP_NAME, is_packaged_app, program_root, temp_dir
 from src.modules.updates.splash_status import clear_update_status, status_path, write_update_status
 
-# Растёт при каждом изменении TigoUpdate, иначе Tigo продолжит запускать старую копию.
-UPDATER_REVISION = 3
-_EXE = "TigoUpdate.exe"
+# Растёт при каждом изменении TwoWingsUpdate, иначе 2Wings продолжит запускать старую копию.
+UPDATER_REVISION = 4
+_EXE = "TwoWingsUpdate.exe"
 
 
 def bundled_updater_dir() -> Path:
@@ -33,7 +33,7 @@ def updater_root() -> Path:
 
 
 def ensure_updater() -> Path | None:
-    """Путь к копии TigoUpdate.exe вне Program Files; копирует при первом запуске ревизии."""
+    """Путь к копии TwoWingsUpdate.exe вне Program Files; копирует при первом запуске ревизии."""
     target = updater_root() / str(UPDATER_REVISION)
     if (target / _EXE).is_file():
         return target / _EXE
@@ -53,7 +53,7 @@ def ensure_updater() -> Path | None:
 
 
 def launch_updater(*, version: str, from_version: str, installer_url: str, checksum_url: str) -> bool:
-    """Отдать обновление TigoUpdate. False — окно не запустилось, Tigo ставит обновление сам."""
+    """Отдать обновление TwoWingsUpdate. False — окно не запустилось, 2Wings ставит обновление сам."""
     if sys.platform != "win32" or not is_packaged_app():
         return False
     try:

@@ -1,4 +1,4 @@
-"""Parse and render strategy test log lines."""
+"""Parse strategy test log lines."""
 
 from __future__ import annotations
 
@@ -8,10 +8,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Callable
 
-from src.ui.theme import T
-
-NAME_COL_MIN = 24
-TOKEN_COL_WIDTHS = (10, 11, 11)
+COLOR_STATUS_ACTIVE = "active"
+COLOR_STATUS_EXPIRING = "expiring"
+COLOR_STATUS_ERROR = "error"
+COLOR_TEXT = "text"
+COLOR_TEXT_MUTED = "muted"
 
 
 class TestLogLevel(str, Enum):
@@ -35,12 +36,6 @@ class ParsedTestRow:
     ping: str | None
 
 
-@dataclass(frozen=True)
-class TableLayout:
-    name_width: int
-    token_widths: tuple[int, ...]
-
-
 _listeners: list[Callable[[], None]] = []
 _lines: list[TestLogLine] = []
 _MAX_LINES = 800
@@ -51,25 +46,15 @@ _TEST_ROW_PIPE = re.compile(
 _TEST_ROW_PING_ONLY = re.compile(r"^(?P<name>\S+)\s+Ping:\s*(?P<ping>.+)$")
 
 
-def line_color(level: TestLogLevel) -> str:
-    if level == TestLogLevel.OK:
-        return T.STATUS_ACTIVE
-    if level == TestLogLevel.WARN:
-        return T.STATUS_EXPIRING
-    if level == TestLogLevel.ERROR:
-        return T.STATUS_ERROR
-    return T.TEXT
-
-
 def token_color(token: str) -> str:
     upper = token.upper()
     if "ERROR" in upper or "SSL" in upper or "FAIL" in upper:
-        return T.STATUS_ERROR
+        return COLOR_STATUS_ERROR
     if "UNSUP" in upper:
-        return T.STATUS_EXPIRING
+        return COLOR_STATUS_EXPIRING
     if ":OK" in upper or upper.endswith("OK"):
-        return T.STATUS_ACTIVE
-    return T.TEXT
+        return COLOR_STATUS_ACTIVE
+    return COLOR_TEXT
 
 
 def _timestamp() -> str:
@@ -104,24 +89,13 @@ def parse_test_row(text: str) -> ParsedTestRow | None:
     return None
 
 
-def compute_table_layout(lines: list[TestLogLine]) -> TableLayout:
-    parsed = [parse_test_row(line.text) for line in lines]
-    names = [row.name for row in parsed if row]
-    name_width = max([len(name) for name in names] + [NAME_COL_MIN])
-    max_tokens = max([len(row.tokens) for row in parsed if row], default=0)
-    token_widths = TOKEN_COL_WIDTHS
-    if max_tokens > len(token_widths):
-        token_widths = token_widths + (11,) * (max_tokens - len(token_widths))
-    return TableLayout(name_width=name_width, token_widths=token_widths)
-
-
 def _classify_console_line(text: str) -> TestLogLevel:
     upper = text.upper()
     row = parse_test_row(text)
     if row and row.tokens:
-        if any(token_color(token) == T.STATUS_ERROR for token in row.tokens):
+        if any(token_color(token) == COLOR_STATUS_ERROR for token in row.tokens):
             return TestLogLevel.ERROR
-        if any(token_color(token) == T.STATUS_EXPIRING for token in row.tokens):
+        if any(token_color(token) == COLOR_STATUS_EXPIRING for token in row.tokens):
             return TestLogLevel.WARN
         return TestLogLevel.OK
     if row and row.ping:
@@ -161,56 +135,7 @@ def append_from_console(text: str) -> None:
     append(stripped, level=_classify_console_line(stripped))
 
 
-def get_lines() -> list[TestLogLine]:
-    return list(_lines)
-
-
 def clear() -> None:
     _lines.clear()
     _notify()
 
-
-def _span_parts(full: str, parts: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Build contiguous (text, color) chunks from ordered labeled parts."""
-    return parts
-
-
-def line_text_spans(
-    line: TestLogLine,
-    *,
-    layout: TableLayout | None = None,
-) -> list[tuple[str, str]]:
-    """Return (text, color) segments for one journal line."""
-    layout = layout or TableLayout(name_width=NAME_COL_MIN, token_widths=TOKEN_COL_WIDTHS)
-    prefix = f"[{line.timestamp}] "
-    segments: list[tuple[str, str]] = [(prefix, T.TEXT_MUTED)]
-
-    row = parse_test_row(line.text)
-    if not row:
-        segments.append((line.text, line_color(line.level)))
-        return segments
-
-    body_parts: list[tuple[str, str]] = []
-    body_parts.append((row.name.ljust(layout.name_width), T.TEXT))
-
-    if row.tokens:
-        body_parts.append(("    ", T.TEXT))
-        token_widths = layout.token_widths
-        for index, token in enumerate(row.tokens):
-            width = token_widths[index] if index < len(token_widths) else 11
-            body_parts.append((" ", T.TEXT))
-            body_parts.append((token.ljust(width), token_color(token)))
-        ping_color = (
-            T.STATUS_EXPIRING
-            if row.ping and row.ping.lower() in {"timeout", "n/a"}
-            else T.STATUS_ACTIVE
-        )
-        body_parts.append(("  | Ping: ", T.TEXT_MUTED))
-        body_parts.append((row.ping or "", ping_color))
-    else:
-        ping_color = T.STATUS_EXPIRING if row.ping and row.ping.lower() in {"timeout", "n/a"} else T.STATUS_ACTIVE
-        body_parts.append(("   Ping: ", T.TEXT_MUTED))
-        body_parts.append((row.ping or "", ping_color))
-
-    segments.extend(body_parts)
-    return segments

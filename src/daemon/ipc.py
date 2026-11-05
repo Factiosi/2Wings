@@ -1,4 +1,4 @@
-"""Localhost JSON IPC between Tigo GUI and daemon."""
+"""Localhost JSON IPC between 2Wings GUI and daemon."""
 
 from __future__ import annotations
 
@@ -214,7 +214,7 @@ class IpcServer:
         self._running = True
         self._ready.clear()
         self._start_error = None
-        self._thread = threading.Thread(target=self._serve, daemon=True, name="tigo-ipc")
+        self._thread = threading.Thread(target=self._serve, daemon=True, name="twowings-ipc")
         self._thread.start()
         if not self._ready.wait(3.0):
             self._running = False

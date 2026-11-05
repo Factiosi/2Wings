@@ -36,7 +36,7 @@ _STATUS_LABELS = {
     "unknown": "Неизвестная работоспособность",
     "failed": "Не работает",
     "partial": "Частично работает",
-    "full": "Полностью работает (лучший выбор)",
+    "full": "Полностью работает",
 }
 INTER_STRATEGY_PAUSE_SECONDS = 2.0
 TestPhase = Literal["idle", "testing", "pause"]
