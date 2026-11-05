@@ -227,7 +227,7 @@ class _Painter:
         _gdip.GdiplusStartup(ctypes.byref(token), ctypes.byref(_StartupInput(1, None, False, False)), None)
         self._fonts: dict[tuple[bool, float], _P] = {}
         self._mark = _P()
-        mark = _asset("mark-dark.png")
+        mark = _asset("updater-mark.png")
         if mark:
             _gdip.GdipLoadImageFromFile(str(mark), ctypes.byref(self._mark))
         self._formats: dict[tuple[int, bool], _P] = {}
@@ -493,8 +493,8 @@ class UpdateWindow:
             _user32.DispatchMessageW(ctypes.byref(msg))
 
     def _set_icon(self) -> None:
-        """Значок рамки и панели задач из app.ico рядом с exe, в обоих размерах для текущего DPI."""
-        ico = _asset("app.ico")
+        """Значок рамки и панели задач из updater.ico рядом с exe, в обоих размерах для текущего DPI."""
+        ico = _asset("updater.ico")
         if ico is None:
             return
         dpi = round(self.scale * 96)

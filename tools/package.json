@@ -3,7 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@resvg/resvg-js": "^2.6.2",
-    "png-to-ico": "^2.1.8"
+    "@resvg/resvg-js": "^2.6.2"
   }
 }

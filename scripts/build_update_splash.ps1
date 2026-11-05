@@ -9,9 +9,9 @@ if (-not (Test-Path $Py)) { $Py = "python" }
 
 $DistRoot = Join-Path $Repo "dist"
 $AssetDir = Join-Path $Repo "scripts\release_assets\TwoWingsUpdate"
-$icon = Join-Path $Repo "assets\icons\app.ico"
+$icon = Join-Path $Repo "assets\icons\updater.ico"
 if (-not (Test-Path $icon)) {
-    throw "assets\icons\app.ico is required."
+    throw "assets\icons\updater.ico is required."
 }
 $revision = (Select-String -Path (Join-Path $Repo "src\modules\updates\splash_launcher.py") -Pattern 'UPDATER_REVISION\s*=\s*(\d+)').Matches[0].Groups[1].Value
 
@@ -31,8 +31,8 @@ $splashArgs = @(
     "--company-name=2Wings",
     "--include-module=src.update_splash.app",
     "--include-module=src.update_splash.worker",
-    "--include-data-files=$(Join-Path $Repo 'assets\icons\mark-dark.png')=mark-dark.png",
-    "--include-data-files=$icon=app.ico",
+    "--include-data-files=$(Join-Path $Repo 'assets\icons\updater-mark.png')=updater-mark.png",
+    "--include-data-files=$icon=updater.ico",
     "--nofollow-import-to=tkinter",
     "--nofollow-import-to=unittest",
     "--nofollow-import-to=test",

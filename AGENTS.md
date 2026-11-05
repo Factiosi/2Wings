@@ -20,11 +20,13 @@
 |-----|---------|
 | `run.py` | Вход: окно, `--daemon`, `--debug-console` |
 | `requirements.txt` | Зависимости запуска |
+| `requirements-ui.txt` | QFluentWidgets, ставится с `--no-deps` |
 | `requirements-build.txt` | Nuitka |
+| `LICENSE` | GPLv3 |
 | `src/` | Весь код |
-| `assets/icons/` | Иконки окна, трея и окна обновления (собираются из `assets/brand/sources/`) |
-| `assets/brand/sources/` | Белый мастер знака `twowings-simple.svg` |
-| `tools/` | Генератор иконок и инсталлятор |
+| `assets/brand/` | Мастера знаков: `2wings.svg`, `2wings-updater.svg` |
+| `assets/icons/` | `app.ico`, `updater.ico` (нарисованы вручную), значок трея, Lucide; растры делает `tools/generate_icons.mjs` |
+| `tools/` | Генератор растров и установщик |
 | `scripts/` | Сборка, сплэш обновления, релиз, smoke |
 | `docs/` | Сборка и локальные заметки |
 | `tests/` | Тесты |
@@ -186,7 +188,8 @@ python run.py
 - Страница — наследник `components.Page`. Настройка — `OptionCard`/`switch_card`/`select_card` внутри `Group`, как в параметрах Windows; свободное содержимое — `Panel`.
 - Страница строится при входе и уничтожается при уходе (`app._Host`), поэтому таймеры и подписки снимает её `stop()`.
 - Из фонового потока к виджетам не обращаться: только `dispatch.ui_call` и `dispatch.run_bg`. Запросы к daemon — вне потока окна: сокет может подвиснуть на секунды.
-- Окно обновления (`update_splash`) — чистый Win32 и GDI+ без Qt: оно живёт отдельной маленькой программой.
+- Окно обновления (`update_splash`) — чистый Win32 и GDI+ без Qt: оно живёт отдельной маленькой программой со своим значком (`updater.ico`). Предпросмотр всех этапов без скачивания: `scripts/preview_update_window.py`.
+- Значок трея один (`tray.png`): пока обход запущен — цветной, остановлен — серый (`branding.load_tray_icon`).
 
 ## Переход с Tigo
 

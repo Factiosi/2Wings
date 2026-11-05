@@ -1,15 +1,15 @@
 <div align="center">
 
-<img src="assets/icons/app.svg" width="120" alt="2Wings">
+<img src="assets/brand/2wings.svg" width="120" alt="2Wings">
 
 # 2Wings
 
-Окно управления zapret2 для Windows: стратегии Flowseal на winws2, их подбор, DNS и hosts.
+Окно управления zapret2 для Windows: стратегии Flowseal на winws2, их тестирование, DNS и hosts.
 
-[![Скачать последнюю версию](https://img.shields.io/badge/Скачать-последнюю%20версию-8b5cf6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Factiosi/2Wings/releases/latest)
+[![Скачать последнюю версию](https://img.shields.io/badge/Скачать-последнюю%20версию-ff544f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Factiosi/2Wings/releases/latest)
 
-[![Релиз](https://img.shields.io/github/v/release/Factiosi/2Wings?label=релиз&color=8b5cf6)](https://github.com/Factiosi/2Wings/releases/latest)
-[![Скачиваний](https://img.shields.io/github/downloads/Factiosi/2Wings/total?label=скачиваний&color=8b5cf6)](https://github.com/Factiosi/2Wings/releases)
+[![Релиз](https://img.shields.io/github/v/release/Factiosi/2Wings?label=релиз&color=ff544f)](https://github.com/Factiosi/2Wings/releases/latest)
+[![Скачиваний](https://img.shields.io/github/downloads/Factiosi/2Wings/total?label=скачиваний&color=ff544f)](https://github.com/Factiosi/2Wings/releases)
 [![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows&logoColor=white)](#требования)
 
 </div>

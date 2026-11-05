@@ -5,7 +5,7 @@
 - Windows 10/11 x64
 - Python 3.12 + venv
 - Компилятор ставить не нужно: Nuitka сам скачает MinGW при первой сборке
-- Node.js 20+ (для `tools/generate_icons.mjs`, если нет готовых `app.ico` / `tray-*.png`)
+- Node.js 20+ (для `tools/generate_icons.mjs`, если меняются знаки или значки меню)
 
 ## Установка зависимостей
 

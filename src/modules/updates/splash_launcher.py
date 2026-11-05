@@ -19,7 +19,7 @@ from src.core.paths import APP_NAME, is_packaged_app, program_root, temp_dir
 from src.modules.updates.splash_status import clear_update_status, status_path, write_update_status
 
 # Растёт при каждом изменении TwoWingsUpdate, иначе 2Wings продолжит запускать старую копию.
-UPDATER_REVISION = 4
+UPDATER_REVISION = 5
 _EXE = "TwoWingsUpdate.exe"
 
 

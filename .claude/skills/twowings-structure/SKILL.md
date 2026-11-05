@@ -15,6 +15,6 @@ description: >-
 - `modules` не импортирует `ui` (исключение — цвета журнала тестов из `src.ui.theme`). Kernel не знает о стратегиях: принимает готовый `WinwsLaunchSpec`.
 - Новый модуль: `src/modules/<name>/__init__.py`, лог через `src.core.debug_log`; страница — `src/ui/pages/`, регистрация в `ui/app.py` (`build_nav_items`).
 - Тесты — только корневой `tests/test_<тема>.py` (unittest).
-- Ассеты — `assets/` (`icons/`, `hosts/`, `lua/`). Новая папка ассетов — в `scripts/build_nuitka.ps1` и в проверку `scripts/deploy_release.ps1`; если имя совпадает с каталогом в корне программы — проверить маски `tools/twowings_installer.iss` (`\lua\*` с якорем).
+- Ассеты — `assets/` (`brand/`, `icons/`, `hosts/`, `lua/`). Новая папка ассетов — в `scripts/build_nuitka.ps1` и в проверку `scripts/deploy_release.ps1`; если имя совпадает с каталогом в корне программы — проверить маски `tools/twowings_installer.iss` (`\lua\*` с якорем).
 - Генераторы — `tools/`, команды разработчика — `scripts/`, объяснения — `docs/`. В корне свободных файлов нет.
 - Пути рантайма — только через `src/core/paths.py`, не собирать строкой.
