@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QTimer
+from qfluentwidgets import PrimaryPushButton, PushButton
 
 from src.modules.dns.service import (
     ALL_ADAPTERS_KEY,

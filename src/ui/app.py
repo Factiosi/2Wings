@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import sys
+import traceback
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt, QTimer
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 from qfluentwidgets import FluentWindow, NavigationItemPosition
 
 from src.core.branding import app_window_icon_path
+from src.core.debug_log import error as log_error
 from src.core.events import subscribe, unsubscribe
 from src.core.paths import APP_NAME, APP_USER_MODEL_ID, is_packaged_app
 from src.core.settings import get_settings
@@ -21,7 +23,7 @@ from src.modules.strategies.repository import has_flowseal_strategies
 from src.modules.updates.app import MSG_APP_UP_TO_DATE, check_and_install_app, check_app_only
 from src.ui.components import Lucide, Page, apply_theme, use_vsync_rendering
 from src.ui.dispatch import install_dispatcher, run_bg, ui_call
-from src.ui.notifications import present_app_update_result, set_toast_host
+from src.ui.notifications import present_app_update_result, set_toast_host, show_toast
 from src.ui.pages.dns import DnsPage
 from src.ui.pages.home import HomePage
 from src.ui.pages.hosts import HostsPage
@@ -142,7 +144,11 @@ class MainWindow(FluentWindow):
             self._current.leave()
         self._current = widget if isinstance(widget, _Host) else None
         if self._current is not None:
-            self._current.enter()
+            try:
+                self._current.enter()
+            except Exception as exc:  # noqa: BLE001 - an empty area with no word is worse
+                log_error("ui", traceback.format_exc())
+                show_toast(f"Не удалось открыть страницу: {exc}", kind="error", duration=10.0)
 
     def _on_strategies_changed(self) -> None:
         ui_call(self.reload_shell)
@@ -204,7 +210,13 @@ class MainWindow(FluentWindow):
         QApplication.quit()
 
 
+def _log_uncaught(kind, value, trace) -> None:
+    """The window has no console: without this a broken page is just an empty area."""
+    log_error("ui", "".join(traceback.format_exception(kind, value, trace)))
+
+
 def main() -> int:
+    sys.excepthook = _log_uncaught
     if sys.platform == "win32":
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
     use_vsync_rendering()

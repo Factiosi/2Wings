@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-import ctypes, platform, sys, winreg
+import ctypes, sys, winreg
 from ctypes import (
     Union,
     byref,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import threading
+from typing import Callable
 
 import pystray
 
