@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from qfluentwidgets import PlainTextEdit, PrimaryPushButton, PushButton
 
 from src.core.debug_log import debug, error as log_error, info as log_info
@@ -33,7 +33,7 @@ from src.ui.filter_labels import (
     ipset_filter_label,
 )
 from src.ui.notifications import show_toast
-from src.ui.strategy_status import strategy_badge, strategy_status
+from src.ui.strategy_status import strategy_status
 
 POLL_MS = 2000
 RESYNC_MS = 500
@@ -136,9 +136,6 @@ class HomePage(Page):
         )
         strategy_card.select.setMinimumWidth(240)
         strategy_card.select.badges = {s.id: strategy_status(s.id) for s in strategies}
-        self._strategy_card = strategy_card
-        self._current_badge = None
-        self._show_current_badge()
         self.add(
             Group("Стратегии", strategy_card),
             Group(
@@ -159,17 +156,6 @@ class HomePage(Page):
                 ),
             ),
         )
-
-    def _show_current_badge(self) -> None:
-        """Status of the chosen strategy beside the list, as on the strategy test page."""
-        if self._current_badge is not None:
-            self._current_badge.setParent(None)
-            self._current_badge.deleteLater()
-            self._current_badge = None
-        if self._selected_strategy_id:
-            self._current_badge = strategy_badge(self._selected_strategy_id, self._strategy_card)
-            self._strategy_card.texts.addSpacing(4) if self._strategy_card.texts.count() < 3 else None
-            self._strategy_card.texts.addWidget(self._current_badge, 0, Qt.AlignmentFlag.AlignLeft)
 
     # status --------------------------------------------------------------------
     def _status_running(self, status) -> bool:
@@ -335,7 +321,6 @@ class HomePage(Page):
 
     def _on_strategy_change(self, strategy_id: str) -> None:
         self._selected_strategy_id = strategy_id
-        self._show_current_badge()
         settings = get_settings()
         settings.selected_strategy = strategy_id
         save_settings(settings)

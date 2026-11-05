@@ -360,7 +360,6 @@ class OptionCard(SimpleCardWidget):
             line.addWidget(mark)
         texts = QVBoxLayout()
         texts.setSpacing(0)
-        self.texts = texts
         self.title_label = BodyLabel(title, self)
         self.title_label.setWordWrap(True)
         texts.addWidget(self.title_label)
