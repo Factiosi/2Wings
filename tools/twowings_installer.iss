@@ -2,7 +2,7 @@
 ; Build dist\2Wings first, then compile this file with ISCC.exe.
 
 #define MyAppName "2Wings"
-#define MyAppVersion "2.0.0"
+#define MyAppVersion "2.0.3"
 #define MyAppPublisher "2Wings"
 #define MyAppExeName "2Wings.exe"
 #define MyAppId "{{CB93C415-8593-4898-99D8-D1B69E7C8C38}"
