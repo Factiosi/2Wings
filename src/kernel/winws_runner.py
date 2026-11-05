@@ -36,6 +36,11 @@ class RunnerSnapshot:
     error: str | None
 
 
+DRIVER_RETRIES = 2
+DRIVER_RETRY_SECONDS = 2.0
+_DRIVER_BUSY = "windivert: error opening filter"
+
+
 class WinwsRunner:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -65,6 +70,16 @@ class WinwsRunner:
         return running
 
     def start(self, spec: WinwsLaunchSpec, *, wait_seconds: float = STARTUP_WAIT) -> tuple[bool, str]:
+        """The driver service may still be on its way out after the previous engine: try again."""
+        for attempt in range(DRIVER_RETRIES + 1):
+            ok, message = self._start_once(spec, wait_seconds=wait_seconds)
+            if ok or attempt == DRIVER_RETRIES or _DRIVER_BUSY not in message:
+                break
+            debug("kernel", f"windivert driver busy, retry {attempt + 1}")
+            time.sleep(DRIVER_RETRY_SECONDS)
+        return ok, message
+
+    def _start_once(self, spec: WinwsLaunchSpec, *, wait_seconds: float) -> tuple[bool, str]:
         with self._lock:
             self.stop_locked(cooldown=False)
             self._phase = RunnerPhase.STARTING
