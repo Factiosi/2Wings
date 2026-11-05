@@ -7,7 +7,7 @@ description: >-
 
 # Структура 2Wings
 
-Закон имён — `docs/STRUCTURE.md` в Factiosi; пересказ для агента — [reference.md](reference.md). При расхождении верен документ Factiosi.
+Общие правила — [reference.md](reference.md).
 
 ## 2Wings
 
