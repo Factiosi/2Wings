@@ -112,6 +112,9 @@ class TwoWingsDaemon:
                 threading.Thread(
                     target=self._refresh_hosts_catalog, daemon=True, name="twowings-hosts-catalog"
                 ).start()
+            threading.Thread(
+                target=self._youtube_cache_loop, daemon=True, name="twowings-youtube-cache"
+            ).start()
             runtime_result = ensure_runtime_installed(allow_update=get_settings().auto_promote_updates)
             if runtime_result.ok:
                 launch_last_strategy_if_configured(from_daemon=True)
@@ -144,6 +147,26 @@ class TwoWingsDaemon:
         ok, message = refresh_catalog_and_services()
         if message:
             (info if ok else warn)("hosts", message)
+
+    def _youtube_cache_loop(self) -> None:
+        """Hourly check of YouTube cache servers while the option is on.
+
+        The first check waits a minute: the bypass starts right after bootstrap,
+        and without it YouTube does not hand out its servers.
+        """
+        from src.modules.hosts.service import check_youtube_cache
+        from src.modules.hosts.youtube_cache import check_due
+
+        if self._shutdown.wait(60):
+            return
+        while not self._shutdown.is_set():
+            try:
+                # The window changes the option in its own process: read the file again.
+                if reload_settings().hosts_youtube_cache and check_due():
+                    check_youtube_cache()
+            except Exception as exc:  # noqa: BLE001 - a failed check must not stop the loop
+                warn("hosts", f"youtube cache check failed: {exc}")
+            self._shutdown.wait(60)
 
     def _tray_status(self) -> tuple[bool, bool]:
         from src.kernel.process_probe import is_canonical_winws_running

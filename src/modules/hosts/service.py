@@ -186,6 +186,48 @@ def refresh_catalog_and_services(*, force: bool = False) -> tuple[bool, str]:
     return True, message
 
 
+def check_youtube_cache() -> tuple[bool, str]:
+    """Check YouTube cache servers; with the option on, close the dead ones in hosts."""
+    from src.modules.hosts import youtube_cache
+
+    enabled = get_settings().hosts_youtube_cache
+    current = read_hosts()
+    result = youtube_cache.check_servers(youtube_cache.blocked_hosts(current))
+    youtube_cache.save_result(result)
+    if result.error:
+        warn("hosts", f"youtube cache check: {result.error}")
+        return False, result.error
+    total, dead = len(result.servers), len(result.dead)
+    info("hosts", f"youtube cache check: {total} servers, {dead} dead")
+    if not any(server.alive for server in result.servers):
+        return False, "Ни один сервер YouTube не ответил: похоже, нет сети, hosts не изменён"
+    if not enabled:
+        return True, f"Проверено серверов: {total}, не отвечают: {dead}"
+    text = youtube_cache.block_text(current, result)
+    if text != current:
+        ok, error = _write(text, f"youtube cache block: {dead} servers")
+        if not ok:
+            return False, error
+    return True, f"Проверено серверов: {total}, закрыто неработающих: {dead}"
+
+
+def set_youtube_cache(enabled: bool) -> tuple[bool, str]:
+    """Turn the check on (and run it now) or off (and open every closed server)."""
+    from src.modules.hosts.youtube_cache import BLOCK_ID
+
+    settings = get_settings()
+    settings.hosts_youtube_cache = enabled
+    save_settings(settings)
+    if enabled:
+        return check_youtube_cache()
+    current = read_hosts()
+    if BLOCK_ID in summarize(current).blocks:
+        ok, error = _write(set_block(current, BLOCK_ID, None), "youtube cache block removed")
+        if not ok:
+            return False, error
+    return True, "Проверка выключена, закрытые серверы YouTube открыты"
+
+
 def restore_default() -> tuple[bool, str]:
     ok, error = _write(DEFAULT_HOSTS, "restored default hosts")
     if not ok:
@@ -206,10 +248,11 @@ def restore_backup() -> tuple[bool, str]:
 
 
 def _forget_services() -> None:
-    """The file no longer has service blocks; keep the saved choice in step."""
+    """The file no longer has 2Wings blocks; keep the saved choices in step."""
     settings = get_settings()
-    if settings.hosts_services:
+    if settings.hosts_services or settings.hosts_youtube_cache:
         settings.hosts_services = {}
+        settings.hosts_youtube_cache = False
         save_settings(settings)
 
 

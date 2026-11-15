@@ -17,9 +17,11 @@ from src.modules.hosts.catalog import (
     service_rows,
 )
 from src.modules.hosts.hosts_file import hosts_path
+from src.modules.hosts import youtube_cache
 from src.modules.hosts.service import (
     HostsState,
     apply_services,
+    check_youtube_cache,
     load_state,
     open_in_editor,
     refresh_catalog_and_services,
@@ -27,8 +29,9 @@ from src.modules.hosts.service import (
     restore_default,
     service_block_id,
     set_preset,
+    set_youtube_cache,
 )
-from src.ui.components import Lucide, Group, OptionCard, Page, Panel, caption, clear_layout, row, select_card, status_badge
+from src.ui.components import Lucide, Group, OptionCard, Page, Panel, caption, clear_layout, row, select_card, status_badge, switch_card
 from src.ui.dispatch import run_bg
 from src.ui.notifications import show_toast
 
@@ -38,6 +41,12 @@ SERVICES_HINT = (
     f"{APP_NAME} спрашивает вживую при «Применить», остальные берёт из каталога; неотвечающие адреса "
     "не записываются. Домены, которые DNS не проксирует, остаются обычному DNS. "
     "«Прямые записи» — готовые адреса."
+)
+YOUTUBE_HINT = (
+    "Ролики YouTube идут с серверов Google в сети провайдера. Часть из них бывает недоступна, "
+    "и видео грузится через раз, хотя стратегия работает. "
+    f"{APP_NAME} раз в час проверяет эти серверы и закрывает в hosts неработающие, "
+    "тогда плеер берёт другой. Ожившие серверы открываются сами"
 )
 
 
@@ -100,9 +109,46 @@ class HostsPage(Page):
         default_btn = PushButton("Стандартный hosts Windows")
         default_btn.clicked.connect(lambda: self._run(restore_default))
         self._stack.addWidget(presets)
+        self._stack.addWidget(self._youtube_section())
         self._stack.addWidget(self._services_section(state))
         self._stack.addWidget(Group("Файл hosts", Panel(info, row(open_btn, reload_btn), row(backup_btn, default_btn))))
         self.verticalScrollBar().setValue(scroll)
+
+    def _youtube_section(self) -> QWidget:
+        enabled = get_settings().hosts_youtube_cache
+        toggle = switch_card(
+            "Обходить неработающие серверы YouTube",
+            YOUTUBE_HINT,
+            enabled,
+            self._on_youtube_toggle,
+            icon=Lucide("play"),
+        )
+        result = youtube_cache.load_result()
+        if not result.checked_at:
+            status = "Ещё не проверялось"
+        else:
+            when = f"{result.checked_at[8:10]}.{result.checked_at[5:7]} {result.checked_at[11:16]}"
+            if result.error:
+                status = f"Проверка {when}: {result.error}"
+            else:
+                dead = len(result.dead)
+                status = f"Проверено {when} · серверов: {len(result.servers)}, не отвечают: {dead}"
+        panel = Panel(caption(status), spacing=4)
+        blocked = youtube_cache.blocked_hosts()
+        for server in sorted(result.dead, key=lambda item: item.host):
+            holder = QWidget()
+            line = QHBoxLayout(holder)
+            line.setContentsMargins(0, 2, 0, 2)
+            line.addWidget(caption(f"{server.host} · {server.ip}"), 1)
+            if server.host in blocked:
+                line.addWidget(status_badge("active", "Закрыт в hosts"))
+            else:
+                line.addWidget(status_badge("offline", "Не отвечает"))
+            panel.add(holder)
+        check_btn = PushButton(Lucide("refresh-cw"), "Проверить сейчас")
+        check_btn.clicked.connect(self._check_youtube)
+        panel.add(row(check_btn))
+        return Group("Серверы YouTube", toggle, panel)
 
     def _services_section(self, state: HostsState) -> QWidget:
         if self._catalog is None:
@@ -233,6 +279,16 @@ class HostsPage(Page):
         if selection and not self._busy:
             show_toast("Спрашиваю адреса у DNS и проверяю прокси…")
         self._run(lambda: apply_services(selection))
+
+    def _on_youtube_toggle(self, checked: bool) -> None:
+        if checked and not self._busy:
+            show_toast("Проверяю серверы YouTube…")
+        self._run(lambda: set_youtube_cache(checked))
+
+    def _check_youtube(self) -> None:
+        if not self._busy:
+            show_toast("Проверяю серверы YouTube…")
+        self._run(check_youtube_cache)
 
     def _check_visible(self, checked: bool) -> None:
         """Tick or untick every service the search shows; hosts changes on «Применить»."""

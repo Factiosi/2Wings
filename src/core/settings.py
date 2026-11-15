@@ -54,6 +54,8 @@ class AppSettings:
     # hosts editor: catalog service id -> DNS profile id ("hosts" for direct entries)
     hosts_services: dict[str, str] = field(default_factory=dict)
     hosts_profile: str = "comss_dns"
+    # Check YouTube cache servers hourly and close the dead ones in hosts.
+    hosts_youtube_cache: bool = False
     # Add domains/IPs to the user's exclude lists when a server rejects a desynced TLS handshake.
     tls_auto_exclude: bool = True
     # Shows DNS, hosts and the strategy source; off on a fresh install.
