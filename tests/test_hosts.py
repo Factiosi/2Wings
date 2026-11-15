@@ -85,6 +85,16 @@ class LegacyNameTests(unittest.TestCase):
             (Path(tmp) / "hosts.tigo.bak").write_bytes(b"original")
             self.assertEqual(backup_path(hosts).name, "hosts.tigo.bak")
 
+    def test_blocks_marked_2wings_are_read_as_ours(self) -> None:
+        from src.modules.hosts.hosts_file import read_hosts, set_block
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hosts = Path(tmp) / "hosts"
+            hosts.write_bytes(b"# >>> 2wings:fix-youtube >>>\r\n0.0.0.0 a.example\r\n# <<< 2wings:fix-youtube <<<\r\n")
+            text = read_hosts(hosts)
+            self.assertEqual(summarize(text).blocks, {"fix-youtube": 1})
+            self.assertNotIn("2wings:", set_block(text, "other", [("1.1.1.1", "b.example")]))
+
 
 if __name__ == "__main__":
     unittest.main()

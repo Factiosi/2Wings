@@ -17,8 +17,9 @@ from src.core.debug_log import debug
 _BEGIN = "# >>> twowings:{} >>>"
 _END = "# <<< twowings:{} <<<"
 _BLOCK_LINE = re.compile(r"^# (>>>|<<<) twowings:([a-z0-9._-]+) (>>>|<<<)$")
-# Versions up to 1.5.8 were called Tigo; their blocks become ours on the next read.
-_LEGACY_BLOCK_LINE = re.compile(r"^# (>>>|<<<) tigo:([a-z0-9._-]+) (>>>|<<<)(?=\r?$)", re.M)
+# Versions up to 1.5.8 were called Tigo, and blocks written by hand often say
+# "2wings:"; both become ours on the next read and are written back as "twowings:".
+_LEGACY_BLOCK_LINE = re.compile(r"^# (>>>|<<<) (?:tigo|2wings):([a-z0-9._-]+) (>>>|<<<)(?=\r?$)", re.M)
 _BACKUP_NAME = "hosts.twowings.bak"
 _LEGACY_BACKUP_NAME = "hosts.tigo.bak"
 
