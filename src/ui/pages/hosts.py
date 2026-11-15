@@ -31,7 +31,7 @@ from src.modules.hosts.service import (
     set_preset,
     set_youtube_cache,
 )
-from src.ui.components import Lucide, Group, OptionCard, Page, Panel, caption, clear_layout, row, select_card, status_badge, switch_card
+from src.ui.components import Lucide, Group, OptionCard, Page, Panel, caption, clear_layout, row, select_card, spinner, status_badge, switch_card
 from src.ui.dispatch import run_bg
 from src.ui.notifications import show_toast
 
@@ -133,7 +133,10 @@ class HostsPage(Page):
             else:
                 dead = len(result.dead)
                 status = f"Проверено {when} · серверов: {len(result.servers)}, не отвечают: {dead}"
-        panel = Panel(caption(status), spacing=4)
+        self._yt_status = caption(status)
+        self._yt_spinner = spinner()
+        self._yt_spinner.hide()
+        panel = Panel(row(self._yt_spinner, self._yt_status), spacing=4)
         blocked = youtube_cache.blocked_hosts()
         for server in sorted(result.dead, key=lambda item: item.host):
             holder = QWidget()
@@ -145,9 +148,9 @@ class HostsPage(Page):
             else:
                 line.addWidget(status_badge("offline", "Не отвечает"))
             panel.add(holder)
-        check_btn = PushButton(Lucide("refresh-cw"), "Проверить сейчас")
-        check_btn.clicked.connect(self._check_youtube)
-        panel.add(row(check_btn))
+        self._yt_button = PushButton(Lucide("refresh-cw"), "Проверить сейчас")
+        self._yt_button.clicked.connect(self._check_youtube)
+        panel.add(row(self._yt_button))
         return Group("Серверы YouTube", toggle, panel)
 
     def _services_section(self, state: HostsState) -> QWidget:
@@ -281,14 +284,22 @@ class HostsPage(Page):
         self._run(lambda: apply_services(selection))
 
     def _on_youtube_toggle(self, checked: bool) -> None:
-        if checked and not self._busy:
-            show_toast("Проверяю серверы YouTube…")
+        if checked:
+            self._show_youtube_check()
         self._run(lambda: set_youtube_cache(checked))
 
     def _check_youtube(self) -> None:
-        if not self._busy:
-            show_toast("Проверяю серверы YouTube…")
+        self._show_youtube_check()
         self._run(check_youtube_cache)
+
+    def _show_youtube_check(self) -> None:
+        """The check takes about 20 seconds: show it in the block itself; the page redraws when it ends."""
+        if self._busy:
+            return
+        self._yt_spinner.show()
+        self._yt_status.setText("Проверяю серверы YouTube, это около 20 секунд…")
+        self._yt_button.setEnabled(False)
+        self._yt_button.setText("Проверяю…")
 
     def _check_visible(self, checked: bool) -> None:
         """Tick or untick every service the search shows; hosts changes on «Применить»."""
